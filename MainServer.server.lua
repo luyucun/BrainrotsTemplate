@@ -67,6 +67,8 @@ CurrencyService:Init({
 GMCommandService:Init({
     CurrencyService = CurrencyService,
     BrainrotService = BrainrotService,
+    PlayerDataService = PlayerDataService,
+    HomeService = HomeService,
 })
 BrainrotService:Init({
     PlayerDataService = PlayerDataService,

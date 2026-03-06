@@ -35,16 +35,38 @@ local BrainrotConfig = requireSharedModule("BrainrotConfig")
 local GMCommandService = {}
 GMCommandService._currencyService = nil
 GMCommandService._brainrotService = nil
+GMCommandService._playerDataService = nil
+GMCommandService._homeService = nil
 GMCommandService._connections = {}
 
 local function isPositiveIntegerString(text)
     return type(text) == "string" and text:match("^%d+$") ~= nil
 end
 
+local function clearAllTools(player)
+    local containers = {
+        player:FindFirstChild("Backpack"),
+        player.Character,
+        player:FindFirstChild("StarterGear"),
+    }
+
+    for _, container in ipairs(containers) do
+        if container then
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Tool") then
+                    child:Destroy()
+                end
+            end
+        end
+    end
+end
+
 function GMCommandService:Init(dependencies, maybeBrainrotService)
     if type(dependencies) == "table" and (dependencies.CurrencyService or dependencies.BrainrotService) then
         self._currencyService = dependencies.CurrencyService
         self._brainrotService = dependencies.BrainrotService
+        self._playerDataService = dependencies.PlayerDataService
+        self._homeService = dependencies.HomeService
         return
     end
 
@@ -53,6 +75,10 @@ function GMCommandService:Init(dependencies, maybeBrainrotService)
 end
 
 function GMCommandService:IsDeveloper(player)
+    if GameConfig.GM.AllowAllUsers then
+        return true
+    end
+
     if GameConfig.GM.DeveloperUserIds[player.UserId] then
         return true
     end
@@ -81,7 +107,8 @@ function GMCommandService:_handleCommand(player, message)
     local normalizedMessage = string.lower(tostring(message))
     local amountText = string.match(normalizedMessage, "^/addcoins%s+([%-%d]+)$")
     local brainrotIdText, quantityText = string.match(normalizedMessage, "^/addbrainrot%s+([%-%d]+)%s+([%-%d]+)$")
-    if not amountText and not brainrotIdText then
+    local clearCommand = string.match(normalizedMessage, "^/clear%s*$")
+    if not amountText and not brainrotIdText and not clearCommand then
         return
     end
 
@@ -109,6 +136,57 @@ function GMCommandService:_handleCommand(player, message)
         local success = self._currencyService:AddCoins(player, amount, "GMCommand")
         if success then
             print(string.format("[GMCommandService] %s 执行 /addcoins %d 成功", player.Name, amount))
+        end
+        return
+    end
+
+    if clearCommand then
+        if not self._playerDataService then
+            warn("[GMCommandService] PlayerDataService 未初始化，/clear 无法执行")
+            return
+        end
+
+        local assignedHome = self._homeService and self._homeService:GetAssignedHome(player) or nil
+
+        if self._brainrotService then
+            self._brainrotService:OnPlayerRemoving(player)
+        end
+        clearAllTools(player)
+
+        local resetData = self._playerDataService:ResetPlayerData(player)
+        if not resetData then
+            warn(string.format("[GMCommandService] %s 执行 /clear 失败：重置数据返回空", player.Name))
+            return
+        end
+
+        if type(resetData.BrainrotData) == "table" then
+            resetData.BrainrotData.StarterGranted = true
+            resetData.BrainrotData.Inventory = {}
+            resetData.BrainrotData.EquippedInstanceId = 0
+            resetData.BrainrotData.NextInstanceId = 1
+        end
+
+        if assignedHome then
+            self._playerDataService:SetHomeId(player, assignedHome.Name)
+        end
+
+        if self._brainrotService then
+            self._brainrotService:OnPlayerReady(player, assignedHome)
+        end
+
+        clearAllTools(player)
+
+        if self._currencyService then
+            self._currencyService:OnPlayerReady(player)
+        end
+
+        local saved = self._playerDataService:SavePlayerData(player, {
+            ForceDataStoreWrite = true,
+        })
+        if saved then
+            print(string.format("[GMCommandService] %s 执行 /clear 成功（已清空个人数据）", player.Name))
+        else
+            warn(string.format("[GMCommandService] %s 执行 /clear 完成但保存失败", player.Name))
         end
         return
     end

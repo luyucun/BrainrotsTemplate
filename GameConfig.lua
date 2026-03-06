@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.1"
+GameConfig.VERSION = "V1.2.1"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -24,7 +24,7 @@ GameConfig.HOME = {
 GameConfig.DATASTORE = {
     StudioName = "Brainrots_PlayerData_STUDIO_V1",
     LiveName = "Brainrots_PlayerData_LIVE_V1",
-    EnableInStudio = false,
+    EnableInStudio = true,
     AutoSaveInterval = 60,
     MaxRetries = 3,
     RetryDelay = 1.5,
@@ -35,6 +35,7 @@ GameConfig.DATASTORE.ActiveName = RunService:IsStudio()
 
 GameConfig.GM = {
     EnabledOnlyInStudio = true,
+    AllowAllUsers = true,
     DeveloperUserIds = {
         -- [123456789] = true,
     },
@@ -45,7 +46,16 @@ GameConfig.BRAINROT = {
     ModelRootFolderName = "Model",
     RuntimeFolderName = "PlacedBrainrots",
     PromptHoldDuration = 1,
-    ModelPlacementOffsetY = 2,
+    ModelPlacementOffsetY = 0,
+    PlatformAttachmentName = "BrainrotAttachment",
+    PlatformTriggerName = "Trigger",
+    PositionPrefix = "Position",
+    ClaimPrefix = "Claim",
+    GoldInfoGuiName = "GoldInfo",
+    CurrentGoldLabelName = "CurrentGold",
+    OfflineGoldLabelName = "OfflineGold",
+    OfflineProductionCapSeconds = 3600,
+    ClaimTouchDebounceSeconds = 0.35,
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {
@@ -71,6 +81,7 @@ GameConfig.DEFAULT_PLAYER_DATA = {
     Meta = {
         CreatedAt = 0,
         LastLoginAt = 0,
+        LastLogoutAt = 0,
         LastSaveAt = 0,
     },
 }

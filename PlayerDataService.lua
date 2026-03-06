@@ -35,6 +35,7 @@ local GameConfig = requireSharedModule("GameConfig")
 
 local PlayerDataService = {}
 PlayerDataService._sessionDataByUserId = {}
+PlayerDataService._allowDataStoreSaveByUserId = {}
 PlayerDataService._autosaveThread = nil
 PlayerDataService._dataStore = nil
 PlayerDataService._didWarnStudioMemoryMode = false
@@ -100,6 +101,8 @@ function PlayerDataService:LoadPlayerData(player)
     local userId = player.UserId
     local loadedData
     local success = self._dataStore == nil
+    local readFailed = false
+    local allowDataStoreSave = self._dataStore ~= nil
 
     if self._dataStore then
         for attempt = 1, GameConfig.DATASTORE.MaxRetries do
@@ -111,12 +114,15 @@ function PlayerDataService:LoadPlayerData(player)
                 break
             end
 
+             readFailed = true
+
             if isStudioApiDeniedError(loadedData) then
                 if not self._didWarnStudioApiDenied then
                     warn("[PlayerDataService] Studio 未开启 API Services，已自动切换为内存数据模式。")
                     self._didWarnStudioApiDenied = true
                 end
                 self._dataStore = nil
+                allowDataStoreSave = false
                 break
             end
 
@@ -133,6 +139,14 @@ function PlayerDataService:LoadPlayerData(player)
         end
     end
 
+    if self._dataStore and readFailed and not success then
+        allowDataStoreSave = false
+        warn(string.format(
+            "[PlayerDataService] userId=%d 读取连续失败，本次会话将禁止写回 DataStore，避免覆盖旧档。",
+            userId
+        ))
+    end
+
     local now = os.time()
     if not success or type(loadedData) ~= "table" then
         loadedData = deepCopy(GameConfig.DEFAULT_PLAYER_DATA)
@@ -142,6 +156,7 @@ function PlayerDataService:LoadPlayerData(player)
     mergeDefaults(loadedData, GameConfig.DEFAULT_PLAYER_DATA)
     loadedData.Meta.LastLoginAt = now
     self._sessionDataByUserId[userId] = loadedData
+    self._allowDataStoreSaveByUserId[userId] = allowDataStoreSave
 
     return loadedData
 end
@@ -186,7 +201,21 @@ function PlayerDataService:SetHomeId(player, homeId)
     data.HomeState.HomeId = tostring(homeId or "")
 end
 
-function PlayerDataService:SavePlayerData(player)
+function PlayerDataService:ResetPlayerData(player)
+    local userId = player.UserId
+    local now = os.time()
+
+    local resetData = deepCopy(GameConfig.DEFAULT_PLAYER_DATA)
+    resetData.Meta.CreatedAt = now
+    resetData.Meta.LastLoginAt = now
+    resetData.Meta.LastLogoutAt = 0
+    resetData.Meta.LastSaveAt = 0
+
+    self._sessionDataByUserId[userId] = resetData
+    return resetData
+end
+
+function PlayerDataService:SavePlayerData(player, options)
     local userId = player.UserId
     local data = self._sessionDataByUserId[userId]
     if not data then
@@ -197,6 +226,15 @@ function PlayerDataService:SavePlayerData(player)
 
     if not self._dataStore then
         return true
+    end
+
+    local forceDataStoreWrite = type(options) == "table" and options.ForceDataStoreWrite == true
+    if self._allowDataStoreSaveByUserId[userId] == false and not forceDataStoreWrite then
+        warn(string.format(
+            "[PlayerDataService] 跳过保存 userId=%d：本次会话读取失败，已禁止写回避免清档。",
+            userId
+        ))
+        return false
     end
 
     local success = false
@@ -236,7 +274,13 @@ end
 
 function PlayerDataService:SaveAllPlayers()
     local allSuccess = true
+    local now = os.time()
     for _, player in ipairs(Players:GetPlayers()) do
+        local data = self._sessionDataByUserId[player.UserId]
+        if type(data) == "table" and type(data.Meta) == "table" then
+            data.Meta.LastLogoutAt = now
+        end
+
         local success = self:SavePlayerData(player)
         if not success then
             allSuccess = false
@@ -247,8 +291,14 @@ function PlayerDataService:SaveAllPlayers()
 end
 
 function PlayerDataService:OnPlayerRemoving(player)
+    local data = self._sessionDataByUserId[player.UserId]
+    if type(data) == "table" and type(data.Meta) == "table" then
+        data.Meta.LastLogoutAt = os.time()
+    end
+
     self:SavePlayerData(player)
     self._sessionDataByUserId[player.UserId] = nil
+    self._allowDataStoreSaveByUserId[player.UserId] = nil
 end
 
 return PlayerDataService

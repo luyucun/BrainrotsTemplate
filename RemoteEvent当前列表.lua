@@ -1,93 +1,65 @@
 ﻿--[[
 =====================================================
-RemoteEvent 当前列表（V1.1 基线）
+RemoteEvent 当前列表（V1.2.1）
 =====================================================
 
-更新时间: 2026-03-06
-目录结构:
+文档更新时间: 2026-03-06
+说明: V1.2.1 无新增 RemoteEvent，仅行为调整（待机动画、Prompt 限制、数据保护）。
+
+一、事件树
 ReplicatedStorage
-└── Events (Folder)
+└─ Events
+   ├─ CurrencyEvents
+   │  ├─ CoinChanged (RemoteEvent) [V1.0]
+   │  └─ RequestCoinSync (RemoteEvent) [V1.0]
+   ├─ SystemEvents
+   │  └─ HomeAssigned (RemoteEvent) [V1.0]
+   └─ BrainrotEvents
+      ├─ BrainrotStateSync (RemoteEvent) [V1.1]
+      └─ RequestBrainrotStateSync (RemoteEvent) [V1.1]
 
-=====================================================
-一、完整树状列表（含版本）
-=====================================================
+二、事件说明
+1. CoinChanged (S->C)
+- 参数:
+  - total: number
+  - delta: number
+  - reason: string
+  - timestamp: number
+- 用途: 同步玩家金币变化并驱动客户端动画。
 
-ReplicatedStorage
-└── Events (Folder)
-    ├── CurrencyEvents (Folder) [V1.0]
-    │   ├── CoinChanged (RemoteEvent) [V1.0]
-    │   └── RequestCoinSync (RemoteEvent) [V1.0]
-    ├── SystemEvents (Folder) [V1.0]
-    │   └── HomeAssigned (RemoteEvent) [V1.0]
-    └── BrainrotEvents (Folder) [V1.1]
-        ├── BrainrotStateSync (RemoteEvent) [V1.1]
-        └── RequestBrainrotStateSync (RemoteEvent) [V1.1]
+2. RequestCoinSync (C->S)
+- 参数: 无
+- 用途: 客户端主动请求金币同步，服务端回发 CoinChanged。
 
-版本说明:
-- V1.0: 初始金币/家园同步事件
-- V1.1: 脑红系统事件
+3. HomeAssigned (S->C)
+- 参数:
+  - homeId: string
+- 用途: 通知客户端当前分配到的家园。
 
-=====================================================
-二、事件目录总览
-=====================================================
+4. BrainrotStateSync (S->C)
+- 参数:
+  - inventory: array
+  - placed: array
+  - equippedInstanceId: number
+- 用途: 同步脑红背包/放置/装备状态。
 
-1) CurrencyEvents (Folder)
-2) SystemEvents (Folder)
-3) BrainrotEvents (Folder)
+5. RequestBrainrotStateSync (C->S)
+- 参数: 无
+- 用途: 客户端主动拉取脑红状态。
 
-=====================================================
-三、分组明细
-=====================================================
+三、V1.2.1 行为补充（无新增事件）
+1. 放置脑红后自动循环待机动画（服务端驱动）。
+2. 手持脑红时禁用模型内 ProximityPrompt。
+3. 平台已被占用时禁用平台 ProximityPrompt，空位恢复。
+4. 读档连续失败时禁写回防止清档；`/clear` 使用强制写回通道。
 
-【CurrencyEvents】
-- CoinChanged (S->C)
-  参数:
-  {
-      total = number,      -- 当前金币总额
-      delta = number,      -- 本次变化值（可正可负）
-      reason = string,     -- 变化来源，例如 GMCommand/InitialSync/BrainrotProduction
-      timestamp = number   -- 发送时序标记
-  }
-
-- RequestCoinSync (C->S)
-  参数: 无
-  说明: 客户端请求金币同步，服务端会回发 CoinChanged（delta=0）。
-
-【SystemEvents】
-- HomeAssigned (S->C)
-  参数:
-  {
-      homeId = string      -- 例如 Home01
-  }
-  说明: 玩家进入后，服务端通知当前分配到的家园编号。
-
-【BrainrotEvents】
-- BrainrotStateSync (S->C)
-  参数:
-  {
-      inventory = array,          -- 背包脑红列表
-      placed = array,             -- 展示平台已放置脑红列表
-      equippedInstanceId = number -- 当前拿在手上的脑红实例ID
-  }
-  说明: 服务端在玩家就绪、放置、装备变化后推送脑红状态。
-
-- RequestBrainrotStateSync (C->S)
-  参数: 无
-  说明: 客户端主动请求最新脑红状态。
-
-=====================================================
 四、维护约束
-=====================================================
-
-1. 新增业务事件时，必须同步更新:
-   - 本文件
-   - 架构设计文档.lua
-   - RemoteNames.lua
-   - RemoteEventService.lua
-2. 涉及客户端提交的请求类事件，必须服务端校验。
-3. 货币类事件统一在 CurrencyEvents 下维护。
-4. 脑红类事件统一在 BrainrotEvents 下维护。
-5. GM 命令扩展（/addbrainrot）不新增 RemoteEvent，直接服务端改数据与同步。
+1. 未来新增事件必须同步更新:
+- 本文件
+- 架构设计文档.lua
+- RemoteNames.lua
+- RemoteEventService.lua
+2. 所有 C->S 行为必须做服务端校验。
 
 =====================================================
 列表结束

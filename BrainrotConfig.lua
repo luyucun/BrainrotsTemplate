@@ -39,6 +39,7 @@ BrainrotConfig.Entries = {
         ModelPath = "Common/67",
         CoinPerSecond = 5,
         Icon = "rbxassetid://92295649647469",
+        IdleAnimationId = "123010310858935",
     },
     {
         Id = 10002,
@@ -48,6 +49,7 @@ BrainrotConfig.Entries = {
         ModelPath = "Common/67",
         CoinPerSecond = 5,
         Icon = "rbxassetid://92295649647469",
+        IdleAnimationId = "123010310858935",
     },
     {
         Id = 10003,
@@ -57,6 +59,7 @@ BrainrotConfig.Entries = {
         ModelPath = "Common/67",
         CoinPerSecond = 5,
         Icon = "rbxassetid://92295649647469",
+        IdleAnimationId = "123010310858935",
     },
     {
         Id = 10004,
@@ -66,6 +69,7 @@ BrainrotConfig.Entries = {
         ModelPath = "Common/67",
         CoinPerSecond = 5,
         Icon = "rbxassetid://92295649647469",
+        IdleAnimationId = "123010310858935",
     },
 }
 
