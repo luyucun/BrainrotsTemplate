@@ -1,0 +1,64 @@
+--[[
+脚本名字: MainClient
+脚本文件: MainClient.client.lua
+脚本类型: LocalScript
+本地路径: D:/RobloxGame/BrainrotsTemplate/MainClient.client.lua
+Studio放置路径: StarterPlayer/StarterPlayerScripts/MainClient
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local function requireControllerModule(moduleName)
+    local controllersFolder = script.Parent:FindFirstChild("Controllers")
+    if controllersFolder then
+        local moduleInControllers = controllersFolder:FindFirstChild(moduleName)
+        if moduleInControllers and moduleInControllers:IsA("ModuleScript") then
+            return require(moduleInControllers)
+        end
+    end
+
+    local moduleInRoot = script.Parent:FindFirstChild(moduleName)
+    if moduleInRoot and moduleInRoot:IsA("ModuleScript") then
+        return require(moduleInRoot)
+    end
+
+    error(string.format(
+        "[MainClient] 缺少控制器模块 %s（应放在 StarterPlayerScripts/Controllers 或 StarterPlayerScripts 根目录）",
+        moduleName
+    ))
+end
+
+local function requireSharedModule(moduleName)
+    local sharedFolder = ReplicatedStorage:FindFirstChild("Shared")
+    if sharedFolder then
+        local moduleInShared = sharedFolder:FindFirstChild(moduleName)
+        if moduleInShared and moduleInShared:IsA("ModuleScript") then
+            return require(moduleInShared)
+        end
+    end
+
+    local moduleInRoot = ReplicatedStorage:FindFirstChild(moduleName)
+    if moduleInRoot and moduleInRoot:IsA("ModuleScript") then
+        return require(moduleInRoot)
+    end
+
+    error(string.format(
+        "[MainClient] 缺少共享模块 %s（应放在 ReplicatedStorage/Shared 或 ReplicatedStorage 根目录）",
+        moduleName
+    ))
+end
+
+local CoinDisplayController = requireControllerModule("CoinDisplayController")
+local RemoteNames = requireSharedModule("RemoteNames")
+
+local coinDisplayController = CoinDisplayController.new()
+coinDisplayController:Start()
+
+local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
+local brainrotEvents = eventsRoot:FindFirstChild(RemoteNames.BrainrotEventsFolder)
+if brainrotEvents then
+    local requestBrainrotStateSync = brainrotEvents:FindFirstChild(RemoteNames.Brainrot.RequestBrainrotStateSync)
+    if requestBrainrotStateSync and requestBrainrotStateSync:IsA("RemoteEvent") then
+        requestBrainrotStateSync:FireServer()
+    end
+end
