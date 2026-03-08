@@ -36,6 +36,7 @@ HomeService._homeByName = {}
 HomeService._playerHomeByUserId = {}
 HomeService._occupiedByHomeName = {}
 HomeService._characterConnections = {}
+HomeService._rng = Random.new()
 
 local function buildHomeName(index)
     return string.format("%s%02d", GameConfig.HOME.Prefix, index)
@@ -89,29 +90,41 @@ function HomeService:AssignHome(player)
         return self._playerHomeByUserId[player.UserId]
     end
 
+    local availableHomeNames = {}
     for index = 1, GameConfig.HOME.Count do
         local homeName = buildHomeName(index)
         if not self._occupiedByHomeName[homeName] then
             local homeModel = self._homeByName[homeName]
             if homeModel then
-                self._occupiedByHomeName[homeName] = player.UserId
-                self._playerHomeByUserId[player.UserId] = homeModel
-                player:SetAttribute("HomeId", homeName)
-
-                local spawnLocation = getSpawnLocationFromHome(homeModel)
-                if spawnLocation then
-                    player.RespawnLocation = spawnLocation
-                else
-                    warn(string.format("[HomeService] %s 缺少 SpawnLocation", homeName))
-                end
-
-                self:_bindCharacterSpawn(player)
-                return homeModel
+                table.insert(availableHomeNames, homeName)
             end
         end
     end
 
-    return nil
+    if #availableHomeNames <= 0 then
+        return nil
+    end
+
+    local selectedIndex = self._rng:NextInteger(1, #availableHomeNames)
+    local selectedHomeName = availableHomeNames[selectedIndex]
+    local selectedHomeModel = self._homeByName[selectedHomeName]
+    if not selectedHomeModel then
+        return nil
+    end
+
+    self._occupiedByHomeName[selectedHomeName] = player.UserId
+    self._playerHomeByUserId[player.UserId] = selectedHomeModel
+    player:SetAttribute("HomeId", selectedHomeName)
+
+    local spawnLocation = getSpawnLocationFromHome(selectedHomeModel)
+    if spawnLocation then
+        player.RespawnLocation = spawnLocation
+    else
+        warn(string.format("[HomeService] %s 缺少 SpawnLocation", selectedHomeName))
+    end
+
+    self:_bindCharacterSpawn(player)
+    return selectedHomeModel
 end
 
 function HomeService:GetAssignedHome(player)

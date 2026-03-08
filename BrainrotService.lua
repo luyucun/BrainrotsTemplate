@@ -915,20 +915,29 @@ local function shouldUseSingleAnchorForAnimation(instance)
         return false
     end
 
-    -- 保守策略：仅对标准 Humanoid + Motor6D 骨架启用单锚点。
-    -- 其它结构回退全锚定，优先保证“放置后可见且稳定”。
-    local hasHumanoid = instance:FindFirstChildWhichIsA("Humanoid", true) ~= nil
-    if not hasHumanoid then
+    -- 只要存在可动画骨架（Motor6D/Bone），就允许单锚点。
+    -- 这样 Humanoid 与 AnimationController 两种动画路径都能正常驱动。
+    local hasAnyBasePart = instance:FindFirstChildWhichIsA("BasePart", true) ~= nil
+    if not hasAnyBasePart then
         return false
     end
 
+    local hasMotor6D = false
+    local hasBone = false
     for _, descendant in ipairs(instance:GetDescendants()) do
-        if descendant:IsA("Motor6D") then
-            return true
+        if not hasMotor6D and descendant:IsA("Motor6D") then
+            hasMotor6D = true
+        end
+        if not hasBone and descendant:IsA("Bone") then
+            hasBone = true
+        end
+
+        if hasMotor6D and hasBone then
+            break
         end
     end
 
-    return false
+    return hasMotor6D or hasBone
 end
 
 function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
@@ -983,6 +992,12 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
             anchorPart = pivotPart
         end
         if not anchorPart then
+            local humanoidRootPart = placedInstance:FindFirstChild("HumanoidRootPart", true)
+            if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+                anchorPart = humanoidRootPart
+            end
+        end
+        if not anchorPart then
             local rootPart = placedInstance:FindFirstChild("RootPart", true)
             if rootPart and rootPart:IsA("BasePart") then
                 anchorPart = rootPart
@@ -1011,10 +1026,15 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
             return nil
         end
 
-        -- 优先使用 RootPart 作为锚点/轴点，避免锚在头部等节点导致模型跑偏看不见。
-        local rootPart = placedInstance:FindFirstChild("RootPart", true)
-        if rootPart and rootPart:IsA("BasePart") then
-            primaryPart = rootPart
+        -- 优先使用 HumanoidRootPart/RootPart 作为锚点，避免锚在头部等节点导致模型跑偏看不见。
+        local humanoidRootPart = placedInstance:FindFirstChild("HumanoidRootPart", true)
+        if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+            primaryPart = humanoidRootPart
+        else
+            local rootPart = placedInstance:FindFirstChild("RootPart", true)
+            if rootPart and rootPart:IsA("BasePart") then
+                primaryPart = rootPart
+            end
         end
         placedInstance.PrimaryPart = primaryPart
 
@@ -1609,7 +1629,41 @@ function BrainrotService:_resolveIdleAnimationRoot(placedInstance, brainrotDefin
             return sameNameModel
         end
 
-        return placedInstance:FindFirstChildWhichIsA("Model", true)
+        local allModels = {}
+        for _, descendant in ipairs(placedInstance:GetDescendants()) do
+            if descendant:IsA("Model") then
+                table.insert(allModels, descendant)
+            end
+        end
+
+        local bestModel = nil
+        local bestScore = -1
+
+        for _, model in ipairs(allModels) do
+            local score = 0
+            if model:FindFirstChildWhichIsA("Humanoid", true) then
+                score += 8
+            end
+            if model:FindFirstChildWhichIsA("AnimationController", true) then
+                score += 6
+            end
+            if model:FindFirstChildWhichIsA("Motor6D", true) then
+                score += 4
+            end
+            if model:FindFirstChildWhichIsA("Bone", true) then
+                score += 2
+            end
+            if model:FindFirstChildWhichIsA("BasePart", true) then
+                score += 1
+            end
+
+            if score > bestScore then
+                bestScore = score
+                bestModel = model
+            end
+        end
+
+        return bestModel
     end
 
     if placedInstance:IsA("Model") then
@@ -1633,6 +1687,11 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
 
     local animationRoot = self:_resolveIdleAnimationRoot(placedInstance, brainrotDefinition)
     if not animationRoot then
+        warn(string.format(
+            "[BrainrotService] 待机动画播放失败：未找到动画根节点（BrainrotId=%s, ModelPath=%s）",
+            tostring(brainrotDefinition.Id),
+            tostring(brainrotDefinition.ModelPath)
+        ))
         return
     end
 
@@ -1667,19 +1726,24 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
     end
 
     if not animator then
+        warn(string.format(
+            "[BrainrotService] 待机动画播放失败：未找到/创建 Animator（BrainrotId=%s）",
+            tostring(brainrotDefinition.Id)
+        ))
         return
     end
 
     local animation = Instance.new("Animation")
     animation.AnimationId = animationId
 
-    local ok, track = pcall(function()
+    local ok, trackOrError = pcall(function()
         return animator:LoadAnimation(animation)
     end)
 
     animation:Destroy()
 
-    if ok and track then
+    if ok and trackOrError then
+        local track = trackOrError
         track.Looped = true
         pcall(function()
             track.Priority = Enum.AnimationPriority.Idle
@@ -1687,6 +1751,19 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
         track:Play(0)
         local tracksByPosition = ensureTable(self._runtimeIdleTracksByUserId, player.UserId)
         tracksByPosition[positionKey] = track
+    elseif not ok then
+        warn(string.format(
+            "[BrainrotService] 待机动画 LoadAnimation 失败（BrainrotId=%s, AnimationId=%s）: %s",
+            tostring(brainrotDefinition.Id),
+            tostring(animationId),
+            tostring(trackOrError)
+        ))
+    else
+        warn(string.format(
+            "[BrainrotService] 待机动画播放失败：LoadAnimation 返回空 Track（BrainrotId=%s, AnimationId=%s）",
+            tostring(brainrotDefinition.Id),
+            tostring(animationId)
+        ))
     end
 end
 return BrainrotService
