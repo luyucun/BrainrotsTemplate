@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.6"
+GameConfig.VERSION = "V1.7"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -92,6 +92,10 @@ GameConfig.QUICK_TELEPORT = {
         TouchPartName = "PrisonerTouch",
         YOffset = 5,
     },
+}
+
+GameConfig.LEADERBOARD = {
+    CashStatName = "Cash",
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {

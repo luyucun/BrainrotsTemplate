@@ -1,10 +1,10 @@
 --[[
 =====================================================
-RemoteEvent 当前列表（V1.6）
+RemoteEvent 当前列表（V1.7）
 =====================================================
 
 文档更新时间: 2026-03-09
-说明: V1.6 未新增 RemoteEvent；脑红信息牌逻辑为服务端场景渲染逻辑。 
+说明: V1.7 未新增 RemoteEvent；总产速与榜单逻辑为服务端运行态计算。
 
 一、事件树
 ReplicatedStorage
@@ -81,16 +81,20 @@ ReplicatedStorage
   - inventory: array
   - placed: array
   - equippedInstanceId: number
-- 用途: 同步脑红背包/放置/装备状态。
+  - totalProductionBaseSpeed: number [V1.7]
+  - totalProductionMultiplier: number [V1.7]
+  - totalProductionSpeed: number [V1.7]
+- 用途: 同步脑红背包/放置/装备状态与当前总产速信息。
 
 11. RequestBrainrotStateSync (C->S)
 - 参数: 无
 - 用途: 客户端主动拉取脑红状态。
 
-三、V1.6 行为补充
-1. V1.6 脑红信息牌显示使用现有 BrainrotState/配置，不新增通信事件。
-2. 品质/稀有度显示名与渐变映射在服务端渲染阶段读取。
-3. 稀有度为 Normal 时，信息牌 Rarity 标签隐藏。
+三、V1.7 行为补充
+1. 玩家总产速按“基础总产速 * (1 + 各加成和)”计算。
+2. 当前加成已接入同服好友加成；总产速每秒服务端刷新。
+3. Tab 内置榜单仅使用 leaderstats: Cash。
+4. Cash 使用 K/M/B 等大数值显示，不额外显示 Rank 列。
 
 四、维护约束
 1. 未来新增事件必须同步更新:

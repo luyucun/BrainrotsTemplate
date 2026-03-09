@@ -675,6 +675,81 @@ function BrainrotService:_getOrCreateProductionSlot(productionState, positionKey
     return slot
 end
 
+function BrainrotService:_collectProductionBonusRates(player)
+    local rates = {}
+
+    local friendBonusPercent = 0
+    if self._friendBonusService then
+        friendBonusPercent = math.max(0, math.floor(tonumber(self._friendBonusService:GetBonusPercent(player)) or 0))
+    end
+
+    if friendBonusPercent > 0 then
+        table.insert(rates, {
+            Source = "FriendBonus",
+            Rate = friendBonusPercent / 100,
+        })
+    end
+
+    local extraBonusPercent = math.max(0, tonumber(player:GetAttribute("ExtraProductionBonusPercent")) or 0)
+    if extraBonusPercent > 0 then
+        table.insert(rates, {
+            Source = "ExtraProductionBonus",
+            Rate = extraBonusPercent / 100,
+        })
+    end
+
+    return rates
+end
+
+function BrainrotService:_resolveProductionMultiplier(player)
+    local totalBonusRate = 0
+    for _, bonusInfo in ipairs(self:_collectProductionBonusRates(player)) do
+        totalBonusRate += math.max(0, tonumber(bonusInfo.Rate) or 0)
+    end
+
+    return 1 + totalBonusRate, totalBonusRate
+end
+
+function BrainrotService:_computePlacedBaseProductionSpeed(placedBrainrots)
+    local baseSpeed = 0
+    if type(placedBrainrots) ~= "table" then
+        return 0
+    end
+
+    for _, placedData in pairs(placedBrainrots) do
+        local brainrotId = tonumber(placedData.BrainrotId)
+        local brainrotDefinition = brainrotId and BrainrotConfig.ById[brainrotId] or nil
+        if brainrotDefinition then
+            baseSpeed += math.max(0, math.floor(tonumber(brainrotDefinition.CoinPerSecond) or 0))
+        end
+    end
+
+    return baseSpeed
+end
+
+function BrainrotService:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+    if not player then
+        return 0, 1, 0
+    end
+
+    local resolvedPlacedBrainrots = placedBrainrots
+    if type(resolvedPlacedBrainrots) ~= "table" then
+        local _playerData, _brainrotData
+        _playerData, _brainrotData, resolvedPlacedBrainrots = self:_getOrCreateDataContainers(player)
+    end
+
+    local baseSpeed = self:_computePlacedBaseProductionSpeed(resolvedPlacedBrainrots)
+    local multiplier, totalBonusRate = self:_resolveProductionMultiplier(player)
+    local finalSpeed = baseSpeed * multiplier
+
+    player:SetAttribute("TotalProductionSpeedBase", baseSpeed)
+    player:SetAttribute("TotalProductionBonusRate", totalBonusRate)
+    player:SetAttribute("TotalProductionMultiplier", multiplier)
+    player:SetAttribute("TotalProductionSpeed", finalSpeed)
+
+    return baseSpeed, multiplier, finalSpeed
+end
+
 function BrainrotService:_ensureStarterInventory(playerData, brainrotData, placedBrainrots)
     if brainrotData.StarterGranted then
         return
@@ -1110,10 +1185,15 @@ function BrainrotService:PushBrainrotState(player)
         return a.positionKey < b.positionKey
     end)
 
+    local totalBaseSpeed, totalMultiplier, totalFinalSpeed = self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+
     self._brainrotStateSyncEvent:FireClient(player, {
         inventory = inventoryPayload,
         placed = placedPayload,
         equippedInstanceId = tonumber(brainrotData.EquippedInstanceId) or 0,
+        totalProductionBaseSpeed = totalBaseSpeed,
+        totalProductionMultiplier = totalMultiplier,
+        totalProductionSpeed = totalFinalSpeed,
     })
 end
 
@@ -1122,11 +1202,7 @@ function BrainrotService:_tickProduction()
         local playerData, _brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
         if playerData and type(placedBrainrots) == "table" and type(productionState) == "table" then
             local changedPositions = {}
-            local friendBonusPercent = 0
-            if self._friendBonusService then
-                friendBonusPercent = math.max(0, math.floor(tonumber(self._friendBonusService:GetBonusPercent(player)) or 0))
-            end
-            local bonusMultiplier = 1 + (friendBonusPercent / 100)
+            local bonusMultiplier = select(1, self:_resolveProductionMultiplier(player))
 
             for positionKey, placedData in pairs(placedBrainrots) do
                 local brainrotId = tonumber(placedData.BrainrotId)
@@ -1149,6 +1225,8 @@ function BrainrotService:_tickProduction()
             for positionKey in pairs(changedPositions) do
                 self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
             end
+
+            self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
         end
     end
 end
@@ -1176,6 +1254,7 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
     self:PushBrainrotState(player)
     self:_refreshAllClaimUi(player, placedBrainrots, productionState)
     self:_refreshAllPlatformPrompts(player, placedBrainrots)
+    self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
 end
 
 function BrainrotService:OnPlayerRemoving(player)
@@ -1183,6 +1262,11 @@ function BrainrotService:OnPlayerRemoving(player)
     self:_clearClaimConnections(player)
     self:_clearToolConnections(player)
     self:_clearRuntimePlaced(player)
+
+    player:SetAttribute("TotalProductionSpeedBase", nil)
+    player:SetAttribute("TotalProductionBonusRate", nil)
+    player:SetAttribute("TotalProductionMultiplier", nil)
+    player:SetAttribute("TotalProductionSpeed", nil)
 end
 
 function BrainrotService:Init(dependencies)
@@ -1465,6 +1549,7 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
     self:PushBrainrotState(player)
     self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
     self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
+    self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
 end
 
 function BrainrotService:_claimPositionGold(player, positionKey)
