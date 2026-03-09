@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: BrainrotService
 脚本文件: BrainrotService.lua
 脚本类型: ModuleScript
@@ -8,6 +8,7 @@ Studio放置路径: ServerScriptService/Services/BrainrotService
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
 local function requireSharedModule(moduleName)
@@ -32,6 +33,7 @@ end
 
 local GameConfig = requireSharedModule("GameConfig")
 local BrainrotConfig = requireSharedModule("BrainrotConfig")
+local BrainrotDisplayConfig = requireSharedModule("BrainrotDisplayConfig")
 local FormatUtil = requireSharedModule("FormatUtil")
 
 local BrainrotService = {}
@@ -51,6 +53,9 @@ BrainrotService._claimsByUserId = {}
 BrainrotService._runtimePlacedByUserId = {}
 BrainrotService._runtimeIdleTracksByUserId = {}
 BrainrotService._productionThread = nil
+BrainrotService._missingDisplayPathWarned = {}
+BrainrotService._didWarnMissingBaseInfoTemplate = false
+BrainrotService._didWarnMissingInfoAttachmentByModelPath = {}
 
 local function ensureTable(parentTable, key)
     if type(parentTable[key]) ~= "table" then
@@ -260,6 +265,282 @@ local function normalizeAnimationId(animationId)
     return nil
 end
 
+local function resolveQualityDisplayInfo(qualityId)
+    local parsedId = math.floor(tonumber(qualityId) or 0)
+    local displayEntry = type(BrainrotDisplayConfig.Quality) == "table" and BrainrotDisplayConfig.Quality[parsedId] or nil
+    local displayName = (type(displayEntry) == "table" and tostring(displayEntry.Name or "")) or ""
+    if displayName == "" then
+        displayName = BrainrotConfig.QualityNames[parsedId] or "Unknown"
+    end
+
+    local gradientPath = type(displayEntry) == "table" and displayEntry.GradientPath or nil
+    return displayName, gradientPath
+end
+
+local function resolveRarityDisplayInfo(rarityId)
+    local parsedId = math.floor(tonumber(rarityId) or 0)
+    local displayEntry = type(BrainrotDisplayConfig.Rarity) == "table" and BrainrotDisplayConfig.Rarity[parsedId] or nil
+    local displayName = (type(displayEntry) == "table" and tostring(displayEntry.Name or "")) or ""
+    if displayName == "" then
+        displayName = BrainrotConfig.RarityNames[parsedId] or "Unknown"
+    end
+
+    local gradientPath = type(displayEntry) == "table" and displayEntry.GradientPath or nil
+    return displayName, gradientPath
+end
+
+local function splitSlashPath(pathText)
+    local result = {}
+    if type(pathText) ~= "string" then
+        return result
+    end
+
+    for segment in string.gmatch(pathText, "[^/]+") do
+        if segment ~= "" then
+            table.insert(result, segment)
+        end
+    end
+
+    return result
+end
+
+local function findInstanceBySlashPath(pathText)
+    local segments = splitSlashPath(pathText)
+    if #segments <= 0 then
+        return nil
+    end
+
+    local current = nil
+    for index, segment in ipairs(segments) do
+        if index == 1 then
+            if segment == "StarterGui" then
+                current = StarterGui
+            elseif segment == "ReplicatedStorage" then
+                current = ReplicatedStorage
+            elseif segment == "Workspace" then
+                current = game:GetService("Workspace")
+            else
+                current = game:FindFirstChild(segment)
+            end
+        else
+            current = current and current:FindFirstChild(segment) or nil
+        end
+
+        if not current then
+            return nil
+        end
+    end
+
+    return current
+end
+
+local function findFirstTextLabelByName(root, nodeName)
+    if not root then
+        return nil
+    end
+
+    local node = root:FindFirstChild(nodeName, true)
+    if node and node:IsA("TextLabel") then
+        return node
+    end
+
+    return nil
+end
+
+local function markManagedDisplayNode(node)
+    if not node then
+        return
+    end
+
+    node:SetAttribute("BrainrotInfoGradient", true)
+    for _, descendant in ipairs(node:GetDescendants()) do
+        descendant:SetAttribute("BrainrotInfoGradient", true)
+    end
+end
+
+local function clearManagedDisplayNodes(parentNode)
+    if not parentNode then
+        return
+    end
+
+    for _, child in ipairs(parentNode:GetChildren()) do
+        if child:GetAttribute("BrainrotInfoGradient") == true then
+            child:Destroy()
+        end
+    end
+end
+
+function BrainrotService:_warnMissingDisplayPath(pathKey, pathText)
+    local key = tostring(pathKey or "")
+    if key == "" then
+        return
+    end
+
+    if self._missingDisplayPathWarned[key] then
+        return
+    end
+
+    self._missingDisplayPathWarned[key] = true
+    warn(string.format(
+        "[BrainrotService] 渐变节点缺失或不可用: %s（路径=%s）",
+        key,
+        tostring(pathText)
+    ))
+end
+
+function BrainrotService:_applyDisplayGradient(label, gradientPath, pathKey)
+    if not (label and label:IsA("TextLabel")) then
+        return
+    end
+
+    clearManagedDisplayNodes(label)
+
+    if type(gradientPath) ~= "string" or gradientPath == "" then
+        return
+    end
+
+    local sourceNode = findInstanceBySlashPath(gradientPath)
+    if not sourceNode then
+        self:_warnMissingDisplayPath(pathKey, gradientPath)
+        return
+    end
+
+    local gradientNodes = {}
+    if sourceNode:IsA("UIGradient") or sourceNode:IsA("UIStroke") then
+        table.insert(gradientNodes, sourceNode)
+    else
+        for _, descendant in ipairs(sourceNode:GetDescendants()) do
+            if descendant:IsA("UIGradient") or descendant:IsA("UIStroke") then
+                table.insert(gradientNodes, descendant)
+            end
+        end
+    end
+
+    if #gradientNodes <= 0 then
+        self:_warnMissingDisplayPath(pathKey, gradientPath)
+        return
+    end
+
+    for _, gradientNode in ipairs(gradientNodes) do
+        local clonedNode = gradientNode:Clone()
+        markManagedDisplayNode(clonedNode)
+
+        local ok = pcall(function()
+            clonedNode.Parent = label
+        end)
+
+        if not ok then
+            clonedNode:Destroy()
+            self:_warnMissingDisplayPath(pathKey, gradientPath)
+        end
+    end
+end
+
+function BrainrotService:_findInfoAttachment(placedInstance)
+    if not placedInstance then
+        return nil
+    end
+
+    local infoAttachmentName = tostring(GameConfig.BRAINROT.InfoAttachmentName or "Info")
+    local infoAttachment = placedInstance:FindFirstChild(infoAttachmentName, true)
+    if infoAttachment and infoAttachment:IsA("Attachment") then
+        return infoAttachment
+    end
+
+    return nil
+end
+
+function BrainrotService:_attachPlacedInfoUi(placedInstance, brainrotDefinition)
+    if not placedInstance or type(brainrotDefinition) ~= "table" then
+        return
+    end
+
+    local infoTemplateRootName = tostring(GameConfig.BRAINROT.InfoTemplateRootName or "UI")
+    local infoTemplateName = tostring(GameConfig.BRAINROT.InfoTemplateName or "BaseInfo")
+    local infoTitleRootName = tostring(GameConfig.BRAINROT.InfoTitleRootName or "Title")
+    local infoNameLabelName = tostring(GameConfig.BRAINROT.InfoNameLabelName or "Name")
+    local infoQualityLabelName = tostring(GameConfig.BRAINROT.InfoQualityLabelName or "Quality")
+    local infoRarityLabelName = tostring(GameConfig.BRAINROT.InfoRarityLabelName or "Rarity")
+    local infoSpeedLabelName = tostring(GameConfig.BRAINROT.InfoSpeedLabelName or "Speed")
+
+    local infoTemplateRoot = ReplicatedStorage:FindFirstChild(infoTemplateRootName)
+    local infoTemplate = infoTemplateRoot and infoTemplateRoot:FindFirstChild(infoTemplateName) or nil
+    if not (infoTemplate and infoTemplate:IsA("BillboardGui")) then
+        if not self._didWarnMissingBaseInfoTemplate then
+            warn(string.format(
+                "[BrainrotService] 缺少脑红信息模板：ReplicatedStorage/%s/%s",
+                tostring(infoTemplateRootName),
+                tostring(infoTemplateName)
+            ))
+            self._didWarnMissingBaseInfoTemplate = true
+        end
+        return
+    end
+
+    local infoAttachment = self:_findInfoAttachment(placedInstance)
+    if not infoAttachment then
+        local modelPathKey = tostring(brainrotDefinition.ModelPath or "UnknownModelPath")
+        if not self._didWarnMissingInfoAttachmentByModelPath[modelPathKey] then
+            warn(string.format(
+                "[BrainrotService] 脑红模型缺少 Info Attachment，无法挂载 BaseInfo（ModelPath=%s）",
+                modelPathKey
+            ))
+            self._didWarnMissingInfoAttachmentByModelPath[modelPathKey] = true
+        end
+        return
+    end
+
+    local existingInfo = infoAttachment:FindFirstChild(infoTemplateName)
+    if existingInfo and existingInfo:IsA("BillboardGui") then
+        existingInfo:Destroy()
+    end
+
+    local infoGui = infoTemplate:Clone()
+    infoGui.Name = infoTemplateName
+    infoGui.Adornee = infoAttachment
+    infoGui.Parent = infoAttachment
+
+    local titleRoot = infoGui:FindFirstChild(infoTitleRootName, true)
+    local searchRoot = titleRoot or infoGui
+
+    local nameLabel = findFirstTextLabelByName(searchRoot, infoNameLabelName) or findFirstTextLabelByName(infoGui, infoNameLabelName)
+    local qualityLabel = findFirstTextLabelByName(searchRoot, infoQualityLabelName) or findFirstTextLabelByName(infoGui, infoQualityLabelName)
+    local rarityLabel = findFirstTextLabelByName(searchRoot, infoRarityLabelName) or findFirstTextLabelByName(infoGui, infoRarityLabelName)
+    local speedLabel = findFirstTextLabelByName(searchRoot, infoSpeedLabelName) or findFirstTextLabelByName(infoGui, infoSpeedLabelName)
+
+    local qualityId = math.floor(tonumber(brainrotDefinition.Quality) or 0)
+    local rarityId = math.floor(tonumber(brainrotDefinition.Rarity) or 0)
+    local qualityName, qualityGradientPath = resolveQualityDisplayInfo(qualityId)
+    local rarityName, rarityGradientPath = resolveRarityDisplayInfo(rarityId)
+    local coinPerSecond = math.max(0, math.floor(tonumber(brainrotDefinition.CoinPerSecond) or 0))
+
+    if nameLabel then
+        nameLabel.Text = tostring(brainrotDefinition.Name or "Unknown")
+    end
+
+    if qualityLabel then
+        qualityLabel.Visible = true
+        qualityLabel.Text = tostring(qualityName)
+        self:_applyDisplayGradient(qualityLabel, qualityGradientPath, "Quality:" .. tostring(qualityId))
+    end
+
+    if rarityLabel then
+        local hideNormalRarity = GameConfig.BRAINROT.HideNormalRarity ~= false
+        local shouldShowRarity = (not hideNormalRarity) or rarityId > 1
+        rarityLabel.Visible = shouldShowRarity
+        rarityLabel.Text = tostring(rarityName)
+
+        if shouldShowRarity then
+            self:_applyDisplayGradient(rarityLabel, rarityGradientPath, "Rarity:" .. tostring(rarityId))
+        else
+            clearManagedDisplayNodes(rarityLabel)
+        end
+    end
+
+    if speedLabel then
+        speedLabel.Text = string.format("$%s/S", FormatUtil.FormatWithCommas(coinPerSecond))
+    end
+end
 local function getOrCreatePulseScale(label)
     if not label or not label:IsA("TextLabel") then
         return nil
@@ -795,9 +1076,9 @@ function BrainrotService:PushBrainrotState(player)
                 name = brainrotDefinition.Name,
                 icon = brainrotDefinition.Icon,
                 quality = brainrotDefinition.Quality,
-                qualityName = BrainrotConfig.QualityNames[brainrotDefinition.Quality] or "Unknown",
+                qualityName = select(1, resolveQualityDisplayInfo(brainrotDefinition.Quality)),
                 rarity = brainrotDefinition.Rarity,
-                rarityName = BrainrotConfig.RarityNames[brainrotDefinition.Rarity] or "Unknown",
+                rarityName = select(1, resolveRarityDisplayInfo(brainrotDefinition.Rarity)),
                 coinPerSecond = brainrotDefinition.CoinPerSecond,
                 modelPath = brainrotDefinition.ModelPath,
             })
@@ -1086,6 +1367,8 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 
     placedInstance.Name = string.format("PlacedBrainrot_%d", brainrotDefinition.Id)
     placedInstance.Parent = runtimeFolder
+
+    self:_attachPlacedInfoUi(placedInstance, brainrotDefinition)
 
     return placedInstance
 end

@@ -145,3 +145,61 @@ V1.5 部分小型快捷功能开发
 快速到达商店2：
 1.玩家点击界面按钮：StarterGui - Main - Top - Sell按钮，将玩家快速传送至：Workspace - Shop02 - PrisonerTouch的位置，传送时：获取PrisonerTouch的坐标，在
 轴高度上加5，让玩家出现在对应的位置即可，我要的效果是玩家传送到对应的天上然后掉下来，这个5这个值应该是可调整的
+
+1.6 脑红信息显示
+
+1.我们在之前的文档中已经说明了，我们的脑红有品质和稀有度两个维度的区分
+2.品质从低到高分别是：Common/Uncommon/rare/Epic/Legendary/Mythic/Secret/God/OG，然后稀有度从低到高分别是Normal/Gold/Diamond/Lava/Galaxy/Hacker/Rainbow
+
+头顶信息显示
+1.在我们的所有脑红模型中，以Brainrot01举例，ReplicatedStorage - Model - Common - Brainrot01这是脑红的模型路径，这个会配置在脑红对应的路径字段里
+    1.1严格地，每个脑红模型下都有一样的结构：（以Brainrot01举例）Brainrot01 - BrainrotModel - RootPart - Info，Info是一个Attachment，用来挂载脑红地ui信息
+    1.2ReplicatedStorage - UI - BaseInfo是一个BillboardGui，是用来显示脑红信息地模板，其中
+        1.2.1BaseInfo - Title - Name是一个textlabel，用于显示脑红地名字
+        1.2.2BaseInfo - Title - Quality是一个textlabel，用于显示脑红的品质名字
+        1.2.3BaseInfo - Title - Rarity是一个textlabel，用于显示脑红的稀有度名字
+        1.2.4BaseInfo - Title - Speed是一个textlabel，用于显示这个脑红的金币产速，格式固定是：$xxx/S
+2.当脑红被玩家拿在手里的时候，不需要给脑红挂载BaseInfo，但是当脑红被放在PlatForm上或者后面我们做规则出现在地上时，都需要给这个脑红挂载一份BaseInfo，然后更改其对应的信息显示出来
+3.我们最好是做一张单独的表，用于给每个品质和每个稀有度的名字做显示，显示名字时直接读这个表里的名字即可
+4.补充一个：如果一个脑红的稀有度是1也就是Normal，那么不显示Rarity，visible设置为false
+
+品质名与稀有度名字对应
+1.我们是想给游戏中的不同品质和稀有度的名字做一个额外的表现，比如赋予一些渐变效果
+2.我在下面的品质表和稀有度表中，给每个品质或者稀有度设置了要赋予的渐变效果的路径，需要赋予时，去对应路径下copy一份赋予即可
+
+品质id	名字	渐变路径
+1	Common	StarterGui/Gradients/Animation/Quality/Common
+2	Uncommon	StarterGui/Gradients/Animation/Quality/Uncommon
+3	Rare	StarterGui/Gradients/Animation/Quality/Rare
+4	Epic	StarterGui/Gradients/Animation/Quality/Epic
+5	Legendary	StarterGui/Gradients/Animation/Quality/Legendary
+6	Mythic	StarterGui/Gradients/Animation/Quality/Mythic
+7	Secret	StarterGui/Gradients/Animation/Quality/Secret
+8	God	StarterGui/Gradients/Animation/Quality/Secret
+9	OG	StarterGui/Gradients/Animation/Quality/Secret
+
+稀有度ID	名字	渐变路径
+1	Normal	StarterGui/Gradients/Animation/Rarity/Common
+2	Gold	StarterGui/Gradients/Animation/Rarity/Gold
+3	Diamond	StarterGui/Gradients/Animation/Rarity/Diamond
+4	Lava	StarterGui/Gradients/Animation/Rarity/Lava
+5	Galaxy	StarterGui/Gradients/Animation/Rarity/Galaxy
+6	Hacker	StarterGui/Gradients/Animation/Rarity/Hacker
+7	Rainbow	StarterGui/Gradients/Animation/Rarity/Rainbow
+
+
+我们做一版测试脑红表，具体表是这样的：
+脑红id	脑红名字	脑红品质	脑红稀有度	脑红模型	基础产出速度/秒	图标
+10001	测试脑红01	1	1	Common/Brainrot01	5	rbxassetid://92295649647469
+10002	测试脑红02	2	2	Common/Brainrot02	5	rbxassetid://92295649647469
+10003	测试脑红03	3	3	Common/Brainrot03	5	rbxassetid://92295649647469
+10004	测试脑红04	4	4	Common/Brainrot01	5	rbxassetid://92295649647469
+10005	测试脑红05	5	5	Common/Brainrot02	10	rbxassetid://92295649647469
+10006	测试脑红06	6	1	Common/Brainrot03	15	rbxassetid://92295649647469
+10007	测试脑红07	7	2	Common/Brainrot01	20	rbxassetid://92295649647469
+10008	测试脑红08	8	3	Common/Brainrot02	100	rbxassetid://92295649647469
+10009	测试脑红09	9	4	Common/Brainrot03	300	rbxassetid://92295649647469
+10010	测试脑红10	9	5	Common/Brainrot01	1000	rbxassetid://92295649647469
+10011	测试脑红11	9	6	Common/Brainrot02	15000	rbxassetid://92295649647469
+10012	测试脑红12	9	7	Common/Brainrot03	600000	rbxassetid://92295649647469
+

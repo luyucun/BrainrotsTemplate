@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.5"
+GameConfig.VERSION = "V1.6"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -56,6 +56,15 @@ GameConfig.BRAINROT = {
     OfflineGoldLabelName = "OfflineGold",
     OfflineProductionCapSeconds = 3600,
     ClaimTouchDebounceSeconds = 0.35,
+    InfoTemplateRootName = "UI",
+    InfoTemplateName = "BaseInfo",
+    InfoAttachmentName = "Info",
+    InfoTitleRootName = "Title",
+    InfoNameLabelName = "Name",
+    InfoQualityLabelName = "Quality",
+    InfoRarityLabelName = "Rarity",
+    InfoSpeedLabelName = "Speed",
+    HideNormalRarity = true,
 }
 
 GameConfig.SOCIAL = {

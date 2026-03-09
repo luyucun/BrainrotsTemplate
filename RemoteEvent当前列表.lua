@@ -1,10 +1,10 @@
 --[[
 =====================================================
-RemoteEvent 当前列表（V1.5）
+RemoteEvent 当前列表（V1.6）
 =====================================================
 
 文档更新时间: 2026-03-09
-说明: V1.5 新增快捷传送请求事件。 
+说明: V1.6 未新增 RemoteEvent；脑红信息牌逻辑为服务端场景渲染逻辑。 
 
 一、事件树
 ReplicatedStorage
@@ -68,7 +68,7 @@ ReplicatedStorage
 - 参数: 无
 - 用途: 客户端主动拉取当前好友加成状态。
 
-9. RequestQuickTeleport (C->S) [V1.5 新增]
+9. RequestQuickTeleport (C->S) [V1.5]
 - 参数:
   - payload.target: string (Home/Shop/Sell)
 - 用途: 玩家点击 Main/Top 快捷按钮后，请求服务端执行传送。
@@ -87,11 +87,10 @@ ReplicatedStorage
 - 参数: 无
 - 用途: 客户端主动拉取脑红状态。
 
-三、V1.5 行为补充
-1. Home 按钮：传送到玩家所属 Home 的 SpawnLocation。
-2. Shop 按钮：传送到 Workspace/Shop01/PrisonerTouch 上方（Y 偏移可配置）。
-3. Sell 按钮：传送到 Workspace/Shop02/PrisonerTouch 上方（Y 偏移可配置）。
-4. 服务端对 RequestQuickTeleport 做参数白名单和请求防抖校验。
+三、V1.6 行为补充
+1. V1.6 脑红信息牌显示使用现有 BrainrotState/配置，不新增通信事件。
+2. 品质/稀有度显示名与渐变映射在服务端渲染阶段读取。
+3. 稀有度为 Normal 时，信息牌 Rarity 标签隐藏。
 
 四、维护约束
 1. 未来新增事件必须同步更新:
