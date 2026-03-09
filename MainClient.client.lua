@@ -49,10 +49,18 @@ local function requireSharedModule(moduleName)
 end
 
 local CoinDisplayController = requireControllerModule("CoinDisplayController")
+local FriendBonusController = requireControllerModule("FriendBonusController")
+local SocialController = requireControllerModule("SocialController")
 local RemoteNames = requireSharedModule("RemoteNames")
 
 local coinDisplayController = CoinDisplayController.new()
 coinDisplayController:Start()
+
+local friendBonusController = FriendBonusController.new()
+friendBonusController:Start()
+
+local socialController = SocialController.new()
+socialController:Start()
 
 local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
 local brainrotEvents = eventsRoot:FindFirstChild(RemoteNames.BrainrotEventsFolder)

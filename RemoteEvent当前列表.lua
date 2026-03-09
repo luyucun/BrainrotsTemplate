@@ -1,10 +1,10 @@
 ﻿--[[
 =====================================================
-RemoteEvent 当前列表（V1.2.1）
+RemoteEvent 当前列表（V1.4）
 =====================================================
 
-文档更新时间: 2026-03-06
-说明: V1.2.1 无新增 RemoteEvent，仅行为调整（待机动画、Prompt 限制、数据保护）。
+文档更新时间: 2026-03-08
+说明: V1.4 新增同服好友产速加成同步事件。
 
 一、事件树
 ReplicatedStorage
@@ -13,7 +13,12 @@ ReplicatedStorage
    │  ├─ CoinChanged (RemoteEvent) [V1.0]
    │  └─ RequestCoinSync (RemoteEvent) [V1.0]
    ├─ SystemEvents
-   │  └─ HomeAssigned (RemoteEvent) [V1.0]
+   │  ├─ HomeAssigned (RemoteEvent) [V1.0]
+   │  ├─ LikeTip (RemoteEvent) [V1.3]
+   │  ├─ SocialStateSync (RemoteEvent) [V1.3]
+   │  ├─ RequestSocialStateSync (RemoteEvent) [V1.3]
+   │  ├─ FriendBonusSync (RemoteEvent) [V1.4]
+   │  └─ RequestFriendBonusSync (RemoteEvent) [V1.4]
    └─ BrainrotEvents
       ├─ BrainrotStateSync (RemoteEvent) [V1.1]
       └─ RequestBrainrotStateSync (RemoteEvent) [V1.1]
@@ -36,22 +41,48 @@ ReplicatedStorage
   - homeId: string
 - 用途: 通知客户端当前分配到的家园。
 
-4. BrainrotStateSync (S->C)
+4. LikeTip (S->C) [V1.3]
+- 参数:
+  - message: string
+  - timestamp: number
+- 用途: 点赞后给点赞者/被点赞者弹出提示文案。
+
+5. SocialStateSync (S->C) [V1.3]
+- 参数:
+  - likedOwnerUserIds: array<number>
+- 用途: 同步“我已点赞过哪些玩家”，用于客户端隐藏不可点赞的 Information Prompt。
+
+6. RequestSocialStateSync (C->S) [V1.3]
+- 参数: 无
+- 用途: 客户端主动拉取社交点赞状态。
+
+7. FriendBonusSync (S->C) [V1.4 新增]
+- 参数:
+  - friendCount: number
+  - bonusPercent: number
+  - timestamp: number
+- 用途: 同步同服好友加成百分比，驱动客户端 Friend Bonus 文本实时更新。
+
+8. RequestFriendBonusSync (C->S) [V1.4 新增]
+- 参数: 无
+- 用途: 客户端主动拉取当前好友加成状态。
+
+9. BrainrotStateSync (S->C)
 - 参数:
   - inventory: array
   - placed: array
   - equippedInstanceId: number
 - 用途: 同步脑红背包/放置/装备状态。
 
-5. RequestBrainrotStateSync (C->S)
+10. RequestBrainrotStateSync (C->S)
 - 参数: 无
 - 用途: 客户端主动拉取脑红状态。
 
-三、V1.2.1 行为补充（无新增事件）
-1. 放置脑红后自动循环待机动画（服务端驱动）。
-2. 手持脑红时禁用模型内 ProximityPrompt。
-3. 平台已被占用时禁用平台 ProximityPrompt，空位恢复。
-4. 读档连续失败时禁写回防止清档；`/clear` 使用强制写回通道。
+三、V1.4 行为补充
+1. 同服好友加成：每位在线好友 +10%，最多 +40%。
+2. 好友上线/离线后，服务端立刻重算并同步 FriendBonusSync。
+3. 脑红实时每秒产金应用好友加成；离线收益结算保持无好友加成逻辑。
+4. StarterGui/Main/Cash/FriendBonus 文本实时展示当前加成（例如 Friend Bonus: +10%）。
 
 四、维护约束
 1. 未来新增事件必须同步更新:
@@ -59,7 +90,9 @@ ReplicatedStorage
 - 架构设计文档.lua
 - RemoteNames.lua
 - RemoteEventService.lua
+
 2. 所有 C->S 行为必须做服务端校验。
+3. 点赞数据为永久数据，存储在 PlayerData.SocialState。
 
 =====================================================
 列表结束

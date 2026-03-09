@@ -1,15 +1,15 @@
 ﻿--[[
 =====================================================
-游戏整体架构设计文档（V1.2.1）
+游戏整体架构设计文档（V1.4）
 =====================================================
 
 项目名称: BrainrotsTemplate
-当前版本: V1.2.1
-文档更新时间: 2026-03-06
+当前版本: V1.4
+文档更新时间: 2026-03-08
 
 一、核心分层
 1. Shared 配置层（ReplicatedStorage/Shared）
-- GameConfig: 全局配置（含 GM、DataStore、Brainrot 平台节点命名）
+- GameConfig: 全局配置（家园、DataStore、脑红、社交、好友产速加成）
 - BrainrotConfig: 脑红静态表（含 IdleAnimationId）
 - RemoteNames / FormatUtil: 事件名与格式化工具
 
@@ -18,41 +18,43 @@
 - HomeService: 家园分配/回收/传送
 - CurrencyService: 金币增减与同步
 - BrainrotService: 脑红背包、放置、产金、领取、状态同步
+- FriendBonusService: V1.4 新增，同服好友关系计算与加成同步
 - GMCommandService: GM 命令（/addcoins /addbrainrot /clear）
 - RemoteEventService: 统一创建和获取 RemoteEvent
+- SocialService: 家园信息板展示、点赞交互与点赞状态同步
 
 3. 客户端层（StarterPlayerScripts）
 - MainClient + CoinDisplayController: 金币数字滚动、抖动、CoinAdd 动效
+- SocialController: LikeTips 弹窗动画、点赞状态同步、Information Prompt 本地可见性过滤
+- FriendBonusController: V1.4 新增，Friend Bonus 文本实时更新
 
 =====================================================
-二、V1.2.1 变更点
+二、V1.4 变更点
 =====================================================
 
-1. 放置模型待机动画（新增）
-- 配置: BrainrotConfig.Entries[*].IdleAnimationId
-- 行为: 脑红放置到 Platform 后，服务端自动播放循环待机动画。
-- 恢复: 玩家重进后从存档恢复放置模型时，会重新启动待机动画。
-- 清理: 模型销毁/玩家离开时，会停止并清理对应 AnimationTrack。
+1. 同服好友产速加成（新增）
+- 规则:
+  - 1 位好友在线: +10%
+  - 2 位好友在线: +20%
+  - 3 位好友在线: +30%
+  - 4 位好友在线: +40%（上限）
+- 生效时机:
+  - 好友上线后立刻生效
+  - 好友离线后立刻移除
 
-2. Prompt 交互限制（新增）
-- 手持脑红时: Tool 内可视模型中的 ProximityPrompt 会被禁用，不可交互、不显示。
-- 平台已占用时: 对应 Platform 的 ProximityPrompt 会被禁用；空位时自动恢复。
+2. 实时产金加成接入（新增）
+- BrainrotService 每秒产金时读取 FriendBonusService 的加成百分比。
+- 使用 FriendBonusRemainder 处理小数增量，避免低产速下百分比精度丢失。
+- 离线收益结算逻辑保持无好友加成（仅按基础 CoinPerSecond * 离线秒数）。
 
-3. Tool 持有与放置对齐（持续生效）
-- 手持逻辑: 使用不可见 Handle 挂手，视觉模型焊接到 Handle。
-- 偏移逻辑: 保留“模板中视觉模型相对 Handle 的偏移”。
-- 放置逻辑: 支持模板为 Tool；优先按配置模型/同名子 Model 的轴点对齐 Attachment。
+3. 客户端展示（新增）
+- UI 路径: StarterGui/Main/Cash/FriendBonus
+- 默认文本: Friend Bonus: +0%
+- 当加成变化时，服务端通过 FriendBonusSync 事件推送更新文本。
 
-4. 数据清档保护（新增）
-- 问题根因: GetAsync 连续失败时若直接写默认数据，可能覆盖旧档导致“像被清档”。
-- 修复策略:
-  - 本次会话读取连续失败 -> 禁止自动写回 DataStore（autosave/离开保存均跳过）。
-  - GM `/clear` -> 使用强制写回通道，允许明确清档。
-- 目标: 非 `/clear` 场景不应再出现“偶发自动清空背包/金币”。
-
-5. GM 权限策略
-- Studio: 允许所有人使用 GM（AllowAllUsers=true）。
-- 线上: 禁止 GM（EnabledOnlyInStudio=true）。
+4. 网络事件新增（V1.4）
+- FriendBonusSync (S->C)
+- RequestFriendBonusSync (C->S)
 
 =====================================================
 三、关键数据结构
@@ -67,11 +69,15 @@ PlayerData
 - HomeState.ProductionState[positionKey]
   - CurrentGold
   - OfflineGold
+  - FriendBonusRemainder (V1.4 新增)
 - BrainrotData
   - Inventory[{ InstanceId, BrainrotId }]
   - EquippedInstanceId
   - NextInstanceId
   - StarterGranted
+- SocialState
+  - LikesReceived: number
+  - LikedPlayerUserIds: map<string, boolean>
 - Meta
   - CreatedAt
   - LastLoginAt
@@ -81,6 +87,8 @@ PlayerData
 服务端运行态（不入档）
 - BrainrotService._runtimePlacedByUserId
 - BrainrotService._runtimeIdleTracksByUserId
+- FriendBonusService._stateByUserId
+- SocialService._homeInfoByName
 - PlayerDataService._allowDataStoreSaveByUserId
 
 =====================================================
@@ -90,10 +98,12 @@ PlayerData
 2. PlayerDataService:Init()
 3. HomeService:Init()
 4. CurrencyService:Init(...)
-5. GMCommandService:Init(...)
-6. BrainrotService:Init(...)
-7. PlayerAdded: 家园分配 -> 读档 -> 脑红恢复 -> 金币同步
-8. PlayerRemoving: 解绑 -> 脑红运行态清理 -> 回收家园 -> 保存
+5. FriendBonusService:Init(...)
+6. GMCommandService:Init(...)
+7. BrainrotService:Init(...)
+8. SocialService:Init(...)
+9. PlayerAdded: 家园分配 -> 读档 -> 好友加成初始化 -> 脑红恢复 -> 社交状态同步 -> 金币同步
+10. PlayerRemoving: 解绑 -> 好友加成重算 -> 脑红运行态清理 -> 社交家园面板清空 -> 回收家园 -> 保存
 
 =====================================================
 五、维护约束
@@ -105,7 +115,8 @@ PlayerData
 
 2. 客户端请求必须服务端校验。
 3. 与金币产出相关状态统一在 HomeState.ProductionState 维护。
-4. V1.2.1 无新增 RemoteEvent，仅服务端行为增强。
+4. 点赞数据属于永久玩家数据，严禁在非 `/clear` 流程下重置。
+5. 好友加成只影响在线实时产出，不影响离线收益结算。
 
 =====================================================
 文档结束

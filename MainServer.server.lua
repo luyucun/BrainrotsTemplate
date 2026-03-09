@@ -56,12 +56,17 @@ local HomeService = requireServerModule("HomeService")
 local CurrencyService = requireServerModule("CurrencyService")
 local GMCommandService = requireServerModule("GMCommandService")
 local BrainrotService = requireServerModule("BrainrotService")
+local FriendBonusService = requireServerModule("FriendBonusService")
+local SocialService = requireServerModule("SocialService")
 
 RemoteEventService:Init()
 PlayerDataService:Init()
 HomeService:Init()
 CurrencyService:Init({
     PlayerDataService = PlayerDataService,
+    RemoteEventService = RemoteEventService,
+})
+FriendBonusService:Init({
     RemoteEventService = RemoteEventService,
 })
 GMCommandService:Init({
@@ -74,6 +79,12 @@ BrainrotService:Init({
     PlayerDataService = PlayerDataService,
     HomeService = HomeService,
     CurrencyService = CurrencyService,
+    FriendBonusService = FriendBonusService,
+    RemoteEventService = RemoteEventService,
+})
+SocialService:Init({
+    PlayerDataService = PlayerDataService,
+    HomeService = HomeService,
     RemoteEventService = RemoteEventService,
 })
 
@@ -87,7 +98,9 @@ local function onPlayerAdded(player)
     PlayerDataService:LoadPlayerData(player)
     PlayerDataService:SetHomeId(player, assignedHome.Name)
     GMCommandService:BindPlayer(player)
+    FriendBonusService:OnPlayerReady(player)
     BrainrotService:OnPlayerReady(player, assignedHome)
+    SocialService:OnPlayerReady(player, assignedHome)
 
     local homeAssignedEvent = RemoteEventService:GetEvent("HomeAssigned")
     if homeAssignedEvent then
@@ -108,8 +121,11 @@ local function onPlayerAdded(player)
 end
 
 local function onPlayerRemoving(player)
+    local assignedHome = HomeService:GetAssignedHome(player)
     GMCommandService:UnbindPlayer(player)
+    FriendBonusService:OnPlayerRemoving(player)
     BrainrotService:OnPlayerRemoving(player)
+    SocialService:OnPlayerRemoving(player, assignedHome)
     HomeService:ReleaseHome(player)
     PlayerDataService:OnPlayerRemoving(player)
 end

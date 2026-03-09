@@ -131,6 +131,26 @@ function HomeService:GetAssignedHome(player)
     return self._playerHomeByUserId[player.UserId]
 end
 
+function HomeService:GetHomeByName(homeName)
+    return self._homeByName[tostring(homeName or "")]
+end
+
+function HomeService:GetHomeOwnerUserId(homeOrName)
+    local homeName = nil
+    if typeof(homeOrName) == "Instance" then
+        homeName = homeOrName.Name
+    else
+        homeName = tostring(homeOrName or "")
+    end
+
+    local ownerUserId = self._occupiedByHomeName[homeName]
+    if type(ownerUserId) ~= "number" then
+        return nil
+    end
+
+    return ownerUserId
+end
+
 function HomeService:TeleportPlayerToHomeSpawn(player)
     local home = self:GetAssignedHome(player)
     local spawnLocation = getSpawnLocationFromHome(home)

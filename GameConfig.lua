@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.2.1"
+GameConfig.VERSION = "V1.4"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -58,6 +58,18 @@ GameConfig.BRAINROT = {
     ClaimTouchDebounceSeconds = 0.35,
 }
 
+GameConfig.SOCIAL = {
+    InfoRootName = "Information",
+    InfoPartName = "InfoPart",
+    SurfaceGuiName = "SurfaceGui01",
+    PromptHoldDuration = 1,
+}
+
+GameConfig.FRIEND_BONUS = {
+    PercentPerFriend = 10,
+    MaxFriendCount = 4,
+}
+
 GameConfig.DEFAULT_PLAYER_DATA = {
     Version = 1,
     Currency = {
@@ -83,6 +95,10 @@ GameConfig.DEFAULT_PLAYER_DATA = {
         LastLoginAt = 0,
         LastLogoutAt = 0,
         LastSaveAt = 0,
+    },
+    SocialState = {
+        LikesReceived = 0,
+        LikedPlayerUserIds = {},
     },
 }
 

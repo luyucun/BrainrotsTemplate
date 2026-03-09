@@ -38,6 +38,7 @@ local BrainrotService = {}
 BrainrotService._playerDataService = nil
 BrainrotService._homeService = nil
 BrainrotService._currencyService = nil
+BrainrotService._friendBonusService = nil
 BrainrotService._remoteEventService = nil
 BrainrotService._brainrotStateSyncEvent = nil
 BrainrotService._requestBrainrotStateSyncEvent = nil
@@ -382,6 +383,14 @@ function BrainrotService:_getOrCreateProductionSlot(productionState, positionKey
     local slot = ensureTable(productionState, positionKey)
     slot.CurrentGold = math.max(0, math.floor(tonumber(slot.CurrentGold) or 0))
     slot.OfflineGold = math.max(0, math.floor(tonumber(slot.OfflineGold) or 0))
+    slot.FriendBonusRemainder = math.max(0, tonumber(slot.FriendBonusRemainder) or 0)
+
+    if slot.FriendBonusRemainder >= 1 then
+        local extraWhole = math.floor(slot.FriendBonusRemainder)
+        slot.CurrentGold += extraWhole
+        slot.FriendBonusRemainder -= extraWhole
+    end
+
     return slot
 end
 
@@ -832,6 +841,11 @@ function BrainrotService:_tickProduction()
         local playerData, _brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
         if playerData and type(placedBrainrots) == "table" and type(productionState) == "table" then
             local changedPositions = {}
+            local friendBonusPercent = 0
+            if self._friendBonusService then
+                friendBonusPercent = math.max(0, math.floor(tonumber(self._friendBonusService:GetBonusPercent(player)) or 0))
+            end
+            local bonusMultiplier = 1 + (friendBonusPercent / 100)
 
             for positionKey, placedData in pairs(placedBrainrots) do
                 local brainrotId = tonumber(placedData.BrainrotId)
@@ -840,8 +854,13 @@ function BrainrotService:_tickProduction()
                     local coinPerSecond = math.max(0, math.floor(tonumber(brainrotDefinition.CoinPerSecond) or 0))
                     if coinPerSecond > 0 then
                         local slot = self:_getOrCreateProductionSlot(productionState, positionKey)
-                        slot.CurrentGold += coinPerSecond
-                        changedPositions[positionKey] = true
+                        local producedExact = (coinPerSecond * bonusMultiplier) + slot.FriendBonusRemainder
+                        local producedWhole = math.floor(producedExact)
+                        slot.FriendBonusRemainder = producedExact - producedWhole
+                        if producedWhole > 0 then
+                            slot.CurrentGold += producedWhole
+                            changedPositions[positionKey] = true
+                        end
                     end
                 end
             end
@@ -889,6 +908,7 @@ function BrainrotService:Init(dependencies)
     self._playerDataService = dependencies.PlayerDataService
     self._homeService = dependencies.HomeService
     self._currencyService = dependencies.CurrencyService
+    self._friendBonusService = dependencies.FriendBonusService
     self._remoteEventService = dependencies.RemoteEventService
 
     self._brainrotStateSyncEvent = self._remoteEventService:GetEvent("BrainrotStateSync")
@@ -1105,6 +1125,7 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
         local staleSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
         staleSlot.CurrentGold = 0
         staleSlot.OfflineGold = 0
+        staleSlot.FriendBonusRemainder = 0
         self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
     end
 
@@ -1151,6 +1172,7 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
     local slot = self:_getOrCreateProductionSlot(productionState, positionKey)
     slot.CurrentGold = 0
     slot.OfflineGold = 0
+    slot.FriendBonusRemainder = 0
 
     local runtimePlaced = ensureTable(self._runtimePlacedByUserId, player.UserId)
     runtimePlaced[positionKey] = placedModel

@@ -99,3 +99,37 @@ Gm需求：
     2.1当模型拿在手里的时候，玩家不与模型自身带的ProximityPrompt交互，这个也不出现
     2.2当Platform上有放置的脑红模型时，玩家不与platform自身带的ProximityPrompt交互，这个也不出现
 3.检查一个bug：为什么玩家的背包数据，有时候关闭游戏会自动清空，有时候不清空？请分析bug原因，我要的是不清空，如果要清理数据我自己会使用gm命令/clear进行操作
+
+
+需求文档V1.3 玩家信息与点赞操作
+
+概述：
+我们需要在玩家的信息板上显示玩家的名字/头像信息，并且可以为玩家点赞
+
+详细规则：
+玩家信息显示：
+1.我们以Home01举例，Home01 - HomeBase - Information - InfoPart - SurfaceGui01 - Frame - PlayerAvatar - ImageLabel是一个imagelabel，用于显示玩家的头像信息
+2.Home01 - HomeBase - Information - InfoPart - SurfaceGui01 - Frame - PlayerName用于显示玩家的名字，如果一个基地没人的时候，默认的信息是显示为：Empty
+3.Home01 - HomeBase - Information - InfoPart - ProximityPrompt是交互触发，玩家靠近时，触发交互界面，玩家长按完成交互，可以给该玩家进行点赞：
+    3.1玩家靠近自己家园的Information不显示交互按钮
+    3.2玩家已经点赞过某个玩家后，再靠近该玩家的Information不显示点赞交互按钮
+    3.3玩家A给玩家B点赞时：需要弹出提示：
+        3.3.1被点赞者玩家B需要弹出提示：把StarterGui - LikeTips的Visible属性改成true，同时把StarterGui - LikeTips - Text的文本改成[PlayerName] gave you a like!，其中[PlayerName]里面是点赞者的名字，弹出时要有动效，从下方滑到目标位置，然后停留2秒左右消失
+        3.3.2点赞者玩家A需要弹出提示，把StarterGui - LikeTips的Visible属性改成true，同时把StarterGui - LikeTips - Text的文本改成：You liked this home!同时弹出效果和消失时间也一致
+
+4.Home01 - HomeBase - Information - InfoPart - SurfaceGui01 - Frame - PlayerLike - Num是用来显示玩家累计获得的点赞数，这个是永久数据，不断累加的，格式固定为：xx Like!注意这里要用单数复数，1个就是1 Like！多个就是xx Likes!
+
+需求文档V1.4 同服务器好友产速加成
+
+概述：当同一个服务器有自己的好友一起在时，玩家的脑红产速会获得加成
+
+详细规则：
+1.当服务器有1/2/3/4个共同好友时，玩家的脑红产出速度加10%/20%/30%/40%，也就是每有一个好友在服务器，产出速度就加10%
+2.当好友进入游戏后产速立刻开始算，好友离线后立刻移除对应的产速加成
+
+玩家离线后再进来算离线收入时，要按无好友的逻辑来算，只有实时产出的金币每秒产出时才计算加成
+
+客户端规则是：
+1.StarterGui - Main - Cash - FriendBonus是一个textlabel，默认文本内容是Friend Bonus: +0%，当有好友加成时需要及时更改文本，比如有1个好友时，文本就是：Friend Bonus: +10%
+
+

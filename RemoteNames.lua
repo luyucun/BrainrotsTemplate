@@ -17,6 +17,11 @@ local RemoteNames = {
     },
     System = {
         HomeAssigned = "HomeAssigned",
+        LikeTip = "LikeTip",
+        SocialStateSync = "SocialStateSync",
+        RequestSocialStateSync = "RequestSocialStateSync",
+        FriendBonusSync = "FriendBonusSync",
+        RequestFriendBonusSync = "RequestFriendBonusSync",
     },
     Brainrot = {
         BrainrotStateSync = "BrainrotStateSync",
