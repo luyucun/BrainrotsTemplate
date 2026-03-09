@@ -133,3 +133,15 @@ Gm需求：
 1.StarterGui - Main - Cash - FriendBonus是一个textlabel，默认文本内容是Friend Bonus: +0%，当有好友加成时需要及时更改文本，比如有1个好友时，文本就是：Friend Bonus: +10%
 
 
+V1.5 部分小型快捷功能开发
+
+快速回家：
+1.玩家点击界面按钮：StarterGui - Main - Top - Home按钮，立刻把玩家传送回家中，也就是自己家里出生点spawnlocation的位置
+
+快速到达商店1：
+1.玩家点击界面按钮：StarterGui - Main - Top - Shop按钮，将玩家快速传送至：Workspace - Shop01 - PrisonerTouch的位置，传送时：获取PrisonerTouch的坐标，在
+轴高度上加5，让玩家出现在对应的位置即可，我要的效果是玩家传送到对应的天上然后掉下来，这个5这个值应该是可调整的
+
+快速到达商店2：
+1.玩家点击界面按钮：StarterGui - Main - Top - Sell按钮，将玩家快速传送至：Workspace - Shop02 - PrisonerTouch的位置，传送时：获取PrisonerTouch的坐标，在
+轴高度上加5，让玩家出现在对应的位置即可，我要的效果是玩家传送到对应的天上然后掉下来，这个5这个值应该是可调整的

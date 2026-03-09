@@ -51,6 +51,7 @@ end
 local CoinDisplayController = requireControllerModule("CoinDisplayController")
 local FriendBonusController = requireControllerModule("FriendBonusController")
 local SocialController = requireControllerModule("SocialController")
+local QuickTeleportController = requireControllerModule("QuickTeleportController")
 local RemoteNames = requireSharedModule("RemoteNames")
 
 local coinDisplayController = CoinDisplayController.new()
@@ -61,6 +62,9 @@ friendBonusController:Start()
 
 local socialController = SocialController.new()
 socialController:Start()
+
+local quickTeleportController = QuickTeleportController.new()
+quickTeleportController:Start()
 
 local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
 local brainrotEvents = eventsRoot:FindFirstChild(RemoteNames.BrainrotEventsFolder)

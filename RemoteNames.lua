@@ -22,6 +22,7 @@ local RemoteNames = {
         RequestSocialStateSync = "RequestSocialStateSync",
         FriendBonusSync = "FriendBonusSync",
         RequestFriendBonusSync = "RequestFriendBonusSync",
+        RequestQuickTeleport = "RequestQuickTeleport",
     },
     Brainrot = {
         BrainrotStateSync = "BrainrotStateSync",

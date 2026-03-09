@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.4"
+GameConfig.VERSION = "V1.5"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -68,6 +68,21 @@ GameConfig.SOCIAL = {
 GameConfig.FRIEND_BONUS = {
     PercentPerFriend = 10,
     MaxFriendCount = 4,
+}
+
+GameConfig.QUICK_TELEPORT = {
+    RequestDebounceSeconds = 0.25,
+    DefaultYOffset = 5,
+    Shop01 = {
+        ModelName = "Shop01",
+        TouchPartName = "PrisonerTouch",
+        YOffset = 5,
+    },
+    Shop02 = {
+        ModelName = "Shop02",
+        TouchPartName = "PrisonerTouch",
+        YOffset = 5,
+    },
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {

@@ -58,6 +58,7 @@ local GMCommandService = requireServerModule("GMCommandService")
 local BrainrotService = requireServerModule("BrainrotService")
 local FriendBonusService = requireServerModule("FriendBonusService")
 local SocialService = requireServerModule("SocialService")
+local QuickTeleportService = requireServerModule("QuickTeleportService")
 
 RemoteEventService:Init()
 PlayerDataService:Init()
@@ -67,6 +68,10 @@ CurrencyService:Init({
     RemoteEventService = RemoteEventService,
 })
 FriendBonusService:Init({
+    RemoteEventService = RemoteEventService,
+})
+QuickTeleportService:Init({
+    HomeService = HomeService,
     RemoteEventService = RemoteEventService,
 })
 GMCommandService:Init({

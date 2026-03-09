@@ -73,6 +73,36 @@ local function findFirstTextLabel(root, name)
     return nil
 end
 
+local function findPlayerNameLabel(root)
+    if not root then
+        return nil
+    end
+
+    local playerNameNode = root:FindFirstChild("PlayerName", true)
+    if playerNameNode then
+        if playerNameNode:IsA("TextLabel") then
+            return playerNameNode
+        end
+
+        local nameNode = playerNameNode:FindFirstChild("Name")
+        if nameNode and nameNode:IsA("TextLabel") then
+            return nameNode
+        end
+
+        local nestedNameNode = playerNameNode:FindFirstChild("Name", true)
+        if nestedNameNode and nestedNameNode:IsA("TextLabel") then
+            return nestedNameNode
+        end
+
+        local nestedTextLabel = playerNameNode:FindFirstChildWhichIsA("TextLabel", true)
+        if nestedTextLabel then
+            return nestedTextLabel
+        end
+    end
+
+    return nil
+end
+
 local function findFirstImageLabel(root, name)
     if not root then
         return nil
@@ -249,7 +279,10 @@ function SocialService:_scanHomeInfo(homeModel)
     local frameRoot = surfaceGui:FindFirstChild("Frame") or surfaceGui:FindFirstChild("Frame", true)
     local searchRoot = frameRoot or surfaceGui
 
-    local playerNameLabel = findFirstTextLabel(searchRoot, "PlayerName")
+    local playerNameLabel = findPlayerNameLabel(searchRoot)
+    if not playerNameLabel then
+        playerNameLabel = findFirstTextLabel(searchRoot, "PlayerName")
+    end
 
     local playerAvatarRoot = searchRoot:FindFirstChild("PlayerAvatar", true)
     local playerAvatarImage = nil
@@ -272,7 +305,7 @@ function SocialService:_scanHomeInfo(homeModel)
     if not playerNameLabel or not playerAvatarImage or not playerLikeNumLabel then
         local missingParts = {}
         if not playerNameLabel then
-            table.insert(missingParts, "PlayerName(TextLabel)")
+            table.insert(missingParts, "PlayerName/Name(TextLabel)")
         end
         if not playerAvatarImage then
             table.insert(missingParts, "PlayerAvatar/ImageLabel(ImageLabel)")
