@@ -1,10 +1,10 @@
 --[[
 =====================================================
-RemoteEvent 当前列表（V1.7）
+RemoteEvent 当前列表（V1.8.1）
 =====================================================
 
-文档更新时间: 2026-03-09
-说明: V1.7 未新增 RemoteEvent；总产速与榜单逻辑为服务端运行态计算。
+文档更新时间: 2026-03-10
+说明: V1.8.1 调整 Claim 粒子实现方式（事件定义不变），Claim 领取音效仍由 ClaimCashFeedback 触发。
 
 一、事件树
 ReplicatedStorage
@@ -19,7 +19,8 @@ ReplicatedStorage
    │  ├─ RequestSocialStateSync (RemoteEvent) [V1.3]
    │  ├─ FriendBonusSync (RemoteEvent) [V1.4]
    │  ├─ RequestFriendBonusSync (RemoteEvent) [V1.4]
-   │  └─ RequestQuickTeleport (RemoteEvent) [V1.5]
+   │  ├─ RequestQuickTeleport (RemoteEvent) [V1.5]
+   │  └─ ClaimCashFeedback (RemoteEvent) [V1.8]
    └─ BrainrotEvents
       ├─ BrainrotStateSync (RemoteEvent) [V1.1]
       └─ RequestBrainrotStateSync (RemoteEvent) [V1.1]
@@ -76,7 +77,14 @@ ReplicatedStorage
   - 仅允许 Home/Shop/Sell 三种目标。
   - 目标坐标由服务端读取场景节点，不信任客户端坐标。
 
-10. BrainrotStateSync (S->C)
+10. ClaimCashFeedback (S->C) [V1.8]
+- 参数:
+  - positionKey: string
+  - claimKey: string
+  - timestamp: number
+- 用途: 仅通知触发领取的玩家在本地播放领取音效（SoundService/Audio/ADDCash）。
+
+11. BrainrotStateSync (S->C)
 - 参数:
   - inventory: array
   - placed: array
@@ -86,15 +94,20 @@ ReplicatedStorage
   - totalProductionSpeed: number [V1.7]
 - 用途: 同步脑红背包/放置/装备状态与当前总产速信息。
 
-11. RequestBrainrotStateSync (C->S)
+12. RequestBrainrotStateSync (C->S)
 - 参数: 无
 - 用途: 客户端主动拉取脑红状态。
 
-三、V1.7 行为补充
-1. 玩家总产速按“基础总产速 * (1 + 各加成和)”计算。
-2. 当前加成已接入同服好友加成；总产速每秒服务端刷新。
-3. Tab 内置榜单仅使用 leaderstats: Cash。
-4. Cash 使用 K/M/B 等大数值显示，不额外显示 Rank 列。
+三、V1.8.1 行为补充
+1. Claim 触碰触发后，服务端执行按压动画/脑红弹跳/粒子特效（Claim 本体不动，优先驱动 Touch）。
+2. Claim 触碰规则:
+- 仅触碰 Claim/Touch 的 Touch 节点才视为有效触碰。
+- 持续站立不动只触发一次。
+- 站在 Claim 上移动不会再次触发。
+- 离开 Claim 后再次触碰可再次触发（受 ClaimTouchDebounceSeconds 限制）。
+3. 粒子特效改为从 ReplicatedStorage/Effect/Claim 复制发射器并挂载到 Touch：Glow/Smoke 各 Emit(1) 后按生命周期销毁，Money/Stars 固定 1.5 秒移除；快速重复触发时先清旧粒子再重建。
+4. ClaimCashFeedback 只下发给触发者本人，实现“只有自己听到”的音效。
+5. 排行榜仍为仅 Cash 列，不显示 Rank；Cash 使用 K/M/B 大数值显示。
 
 四、维护约束
 1. 未来新增事件必须同步更新:
@@ -111,3 +124,4 @@ ReplicatedStorage
 列表结束
 =====================================================
 ]]
+

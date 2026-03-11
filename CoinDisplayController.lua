@@ -195,28 +195,34 @@ function CoinDisplayController:_spawnCoinAdd(delta)
     })
 
     popTween.Completed:Connect(function()
-        local fadeTweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-        local fadeTween = TweenService:Create(popup, fadeTweenInfo, {
+        local textFadeTweenInfo = TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local strokeFadeTweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+
+        local textFadeTween = TweenService:Create(popup, textFadeTweenInfo, {
             TextTransparency = 1,
-            TextStrokeTransparency = 1,
             BackgroundTransparency = 1,
+        })
+
+        local strokeFadeTween = TweenService:Create(popup, strokeFadeTweenInfo, {
+            TextStrokeTransparency = 1,
         })
 
         for _, descendant in ipairs(popup:GetDescendants()) do
             if descendant:IsA("UIStroke") then
-                TweenService:Create(descendant, fadeTweenInfo, {
+                TweenService:Create(descendant, strokeFadeTweenInfo, {
                     Transparency = 1,
                 }):Play()
             end
         end
 
-        fadeTween.Completed:Connect(function()
+        textFadeTween.Completed:Connect(function()
             self:_removePopup(popup)
             popup.Visible = false
             popup:Destroy()
         end)
 
-        fadeTween:Play()
+        strokeFadeTween:Play()
+        textFadeTween:Play()
     end)
 
     popTween:Play()
@@ -264,3 +270,4 @@ function CoinDisplayController:Start()
 end
 
 return CoinDisplayController
+

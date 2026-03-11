@@ -72,6 +72,7 @@ function RemoteEventService:Init()
     self._events.FriendBonusSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.FriendBonusSync)
     self._events.RequestFriendBonusSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestFriendBonusSync)
     self._events.RequestQuickTeleport = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestQuickTeleport)
+    self._events.ClaimCashFeedback = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.ClaimCashFeedback)
     self._events.BrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotStateSync)
     self._events.RequestBrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotStateSync)
 end

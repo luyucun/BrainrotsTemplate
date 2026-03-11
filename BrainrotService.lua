@@ -44,10 +44,13 @@ BrainrotService._friendBonusService = nil
 BrainrotService._remoteEventService = nil
 BrainrotService._brainrotStateSyncEvent = nil
 BrainrotService._requestBrainrotStateSyncEvent = nil
+BrainrotService._claimCashFeedbackEvent = nil
 BrainrotService._promptConnectionsByUserId = {}
 BrainrotService._toolConnectionsByUserId = {}
 BrainrotService._claimConnectionsByUserId = {}
 BrainrotService._claimTouchDebounceByUserId = {}
+BrainrotService._claimEffectByUserId = {}
+BrainrotService._claimBounceStateByUserId = {}
 BrainrotService._platformsByUserId = {}
 BrainrotService._claimsByUserId = {}
 BrainrotService._runtimePlacedByUserId = {}
@@ -56,6 +59,7 @@ BrainrotService._productionThread = nil
 BrainrotService._missingDisplayPathWarned = {}
 BrainrotService._didWarnMissingBaseInfoTemplate = false
 BrainrotService._didWarnMissingInfoAttachmentByModelPath = {}
+BrainrotService._didWarnMissingClaimEffectTemplate = false
 
 local function ensureTable(parentTable, key)
     if type(parentTable[key]) ~= "table" then
@@ -131,6 +135,21 @@ local function getInstancePivotCFrame(instance)
     end
 
     return nil, nil
+end
+
+local function setInstancePivotCFrame(instance, targetCFrame)
+    if not instance or not targetCFrame then
+        return
+    end
+
+    if instance:IsA("Model") then
+        instance:PivotTo(targetCFrame)
+        return
+    end
+
+    if instance:IsA("BasePart") then
+        instance.CFrame = targetCFrame
+    end
 end
 
 local function getToolPivotCFrame(tool, preferredModelName)
@@ -230,6 +249,71 @@ local function isPlatformPart(part)
 
     local lowerName = string.lower(part.Name)
     return lowerName == "platform" or lowerName == "platformpart" or string.find(lowerName, "platform", 1, true) ~= nil
+end
+
+local function getCharacterRootPart(character)
+    if not character then
+        return nil
+    end
+
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+        return humanoidRootPart
+    end
+
+    local primaryPart = character.PrimaryPart
+    if primaryPart and primaryPart:IsA("BasePart") then
+        return primaryPart
+    end
+
+    local fallbackPart = character:FindFirstChildWhichIsA("BasePart")
+    if fallbackPart and fallbackPart:IsA("BasePart") then
+        return fallbackPart
+    end
+
+    return nil
+end
+
+local function isCharacterNearPart(character, part)
+    if not (character and part and part.Parent and part:IsA("BasePart")) then
+        return false
+    end
+
+    local rootPart = getCharacterRootPart(character)
+    if not (rootPart and rootPart.Parent) then
+        return false
+    end
+
+    local localPosition = part.CFrame:PointToObjectSpace(rootPart.Position)
+    local size = part.Size
+    local xLimit = (size.X * 0.5) + 2
+    local zLimit = (size.Z * 0.5) + 2
+    local yLimit = (size.Y * 0.5) + 8
+
+    return math.abs(localPosition.X) <= xLimit
+        and math.abs(localPosition.Z) <= zLimit
+        and math.abs(localPosition.Y) <= yLimit
+end
+
+local function isCharacterTouchingPart(character, part)
+    if not (character and character.Parent and part and part.Parent and part:IsA("BasePart")) then
+        return false
+    end
+
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Include
+    overlapParams.FilterDescendantsInstances = { character }
+    overlapParams.MaxParts = 1
+
+    local success, touchedParts = pcall(function()
+        return workspace:GetPartsInPart(part, overlapParams)
+    end)
+
+    return success and type(touchedParts) == "table" and #touchedParts > 0
+end
+
+local function isCharacterOccupyingPart(character, part)
+    return isCharacterTouchingPart(character, part) or isCharacterNearPart(character, part)
 end
 
 local function formatCurrentGoldText(value)
@@ -369,6 +453,299 @@ local function clearManagedDisplayNodes(parentNode)
         end
     end
 end
+local SECRET_QUALITY_STROKE_COLOR = Color3.fromRGB(255, 255, 255)
+
+local function applyQualityStrokeColorRule(qualityLabel, qualityId)
+    if not (qualityLabel and qualityLabel:IsA("TextLabel")) then
+        return
+    end
+
+    local isSecretQuality = math.floor(tonumber(qualityId) or 0) == 7
+    for _, stroke in ipairs(qualityLabel:GetChildren()) do
+        if stroke:IsA("UIStroke") and stroke:GetAttribute("BrainrotInfoGradient") ~= true then
+            local defaultColor = stroke:GetAttribute("BrainrotDefaultStrokeColor")
+            if typeof(defaultColor) ~= "Color3" then
+                stroke:SetAttribute("BrainrotDefaultStrokeColor", stroke.Color)
+                defaultColor = stroke.Color
+            end
+
+            if isSecretQuality then
+                stroke.Color = SECRET_QUALITY_STROKE_COLOR
+            elseif typeof(defaultColor) == "Color3" then
+                stroke.Color = defaultColor
+            end
+        end
+    end
+end
+local function modulo01(value)
+    local parsed = tonumber(value) or 0
+    parsed = parsed % 1
+    if parsed < 0 then
+        parsed = parsed + 1
+    end
+    return parsed
+end
+
+local function collectRotatedInteriorPositions(baseKeypoints, shift)
+    local positions = {}
+    for _, keypoint in ipairs(baseKeypoints) do
+        local rotatedTime = modulo01((tonumber(keypoint.Time) or 0) + shift)
+        if rotatedTime > 0.0001 and rotatedTime < 0.9999 then
+            table.insert(positions, rotatedTime)
+        end
+    end
+
+    table.sort(positions)
+
+    local deduplicated = {}
+    local lastTime = nil
+    for _, timeValue in ipairs(positions) do
+        if not lastTime or math.abs(timeValue - lastTime) > 0.0001 then
+            table.insert(deduplicated, timeValue)
+            lastTime = timeValue
+        end
+    end
+
+    return deduplicated
+end
+
+local function sampleColorSequencePeriodic(baseKeypoints, timeValue)
+    local count = #baseKeypoints
+    if count <= 0 then
+        return Color3.new(1, 1, 1)
+    end
+
+    if count == 1 then
+        return baseKeypoints[1].Value
+    end
+
+    local targetTime = modulo01(timeValue)
+
+    for index = 1, count - 1 do
+        local left = baseKeypoints[index]
+        local right = baseKeypoints[index + 1]
+        if targetTime >= left.Time and targetTime <= right.Time then
+            local span = math.max(0.000001, right.Time - left.Time)
+            local alpha = math.clamp((targetTime - left.Time) / span, 0, 1)
+            return left.Value:Lerp(right.Value, alpha)
+        end
+    end
+
+    local last = baseKeypoints[count]
+    local first = baseKeypoints[1]
+    local wrappedTime = targetTime
+    if wrappedTime < first.Time then
+        wrappedTime = wrappedTime + 1
+    end
+
+    local span = math.max(0.000001, (first.Time + 1) - last.Time)
+    local alpha = math.clamp((wrappedTime - last.Time) / span, 0, 1)
+    return last.Value:Lerp(first.Value, alpha)
+end
+
+local function sampleNumberSequencePeriodic(baseKeypoints, timeValue)
+    local count = #baseKeypoints
+    if count <= 0 then
+        return 0, 0
+    end
+
+    if count == 1 then
+        return baseKeypoints[1].Value, baseKeypoints[1].Envelope
+    end
+
+    local targetTime = modulo01(timeValue)
+
+    for index = 1, count - 1 do
+        local left = baseKeypoints[index]
+        local right = baseKeypoints[index + 1]
+        if targetTime >= left.Time and targetTime <= right.Time then
+            local span = math.max(0.000001, right.Time - left.Time)
+            local alpha = math.clamp((targetTime - left.Time) / span, 0, 1)
+            local value = left.Value + ((right.Value - left.Value) * alpha)
+            local envelope = left.Envelope + ((right.Envelope - left.Envelope) * alpha)
+            return value, envelope
+        end
+    end
+
+    local last = baseKeypoints[count]
+    local first = baseKeypoints[1]
+    local wrappedTime = targetTime
+    if wrappedTime < first.Time then
+        wrappedTime = wrappedTime + 1
+    end
+
+    local span = math.max(0.000001, (first.Time + 1) - last.Time)
+    local alpha = math.clamp((wrappedTime - last.Time) / span, 0, 1)
+    local value = last.Value + ((first.Value - last.Value) * alpha)
+    local envelope = last.Envelope + ((first.Envelope - last.Envelope) * alpha)
+    return value, envelope
+end
+
+local function buildRotatedColorSequence(baseKeypoints, shift)
+    local keypoints = {
+        ColorSequenceKeypoint.new(0, sampleColorSequencePeriodic(baseKeypoints, -shift)),
+    }
+
+    for _, position in ipairs(collectRotatedInteriorPositions(baseKeypoints, shift)) do
+        table.insert(keypoints, ColorSequenceKeypoint.new(position, sampleColorSequencePeriodic(baseKeypoints, position - shift)))
+    end
+
+    table.insert(keypoints, ColorSequenceKeypoint.new(1, sampleColorSequencePeriodic(baseKeypoints, 1 - shift)))
+    return ColorSequence.new(keypoints)
+end
+
+local function buildRotatedNumberSequence(baseKeypoints, shift)
+    local startValue, startEnvelope = sampleNumberSequencePeriodic(baseKeypoints, -shift)
+    local keypoints = {
+        NumberSequenceKeypoint.new(0, startValue, startEnvelope),
+    }
+
+    for _, position in ipairs(collectRotatedInteriorPositions(baseKeypoints, shift)) do
+        local value, envelope = sampleNumberSequencePeriodic(baseKeypoints, position - shift)
+        table.insert(keypoints, NumberSequenceKeypoint.new(position, value, envelope))
+    end
+
+    local endValue, endEnvelope = sampleNumberSequencePeriodic(baseKeypoints, 1 - shift)
+    table.insert(keypoints, NumberSequenceKeypoint.new(1, endValue, endEnvelope))
+    return NumberSequence.new(keypoints)
+end
+
+local function resolveAnimatedQualityGradientProfile(pathKey, gradientPath)
+    local key = tostring(pathKey or "")
+    if key == "Quality:6" then
+        return "MythicQualityGradient"
+    end
+    if key == "Quality:7" then
+        return "SecretQualityGradient"
+    end
+    if key == "Quality:8" then
+        return "GodQualityGradient"
+    end
+    if key == "Quality:9" then
+        return "OGQualityGradient"
+    end
+    if key == "Rarity:4" then
+        return "LavaRarityGradient"
+    end
+    if key == "Rarity:6" then
+        return "HackerRarityGradient"
+    end
+    if key == "Rarity:7" then
+        return "RainbowRarityGradient"
+    end
+
+    if type(gradientPath) ~= "string" then
+        return nil
+    end
+
+    local lowerPath = string.lower(gradientPath)
+    if string.find(lowerPath, "startergui/gradients/animation/quality/mythic", 1, true) ~= nil then
+        return "MythicQualityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/quality/secret", 1, true) ~= nil then
+        return "SecretQualityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/quality/god", 1, true) ~= nil then
+        return "GodQualityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/quality/og", 1, true) ~= nil then
+        return "OGQualityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/rarity/lava", 1, true) ~= nil then
+        return "LavaRarityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/rarity/hacker", 1, true) ~= nil then
+        return "HackerRarityGradient"
+    end
+    if string.find(lowerPath, "startergui/gradients/animation/rarity/rainbow", 1, true) ~= nil then
+        return "RainbowRarityGradient"
+    end
+
+    return nil
+end
+local function resolveAnimatedQualityGradientConfig(profileName)
+    local configRoot = GameConfig.BRAINROT or {}
+    local prefix = tostring(profileName or "")
+    if prefix == "" then
+        return nil
+    end
+
+    local enabledKey = prefix .. "AnimationEnabled"
+    local offsetRangeKey = prefix .. "OffsetRange"
+    local oneWayDurationKey = prefix .. "OneWayDuration"
+    local updateIntervalKey = prefix .. "UpdateInterval"
+
+    local config = {
+        Enabled = configRoot[enabledKey] ~= false,
+        OffsetRange = math.max(0.05, tonumber(configRoot[offsetRangeKey]) or 1),
+        OneWayDuration = math.max(0.2, tonumber(configRoot[oneWayDurationKey]) or 2.4),
+        UpdateInterval = math.max(1 / 120, tonumber(configRoot[updateIntervalKey]) or (1 / 30)),
+    }
+
+    return config
+end
+function BrainrotService:_tryStartDisplayGradientAnimation(node, gradientPath, pathKey)
+    if not (node and node:IsA("UIGradient")) then
+        return
+    end
+
+    local profileName = resolveAnimatedQualityGradientProfile(pathKey, gradientPath)
+    if not profileName then
+        return
+    end
+
+    local animationConfig = resolveAnimatedQualityGradientConfig(profileName)
+    if not animationConfig or animationConfig.Enabled == false then
+        return
+    end
+
+    if node:GetAttribute("BrainrotInfoGradientAnimated") == true then
+        return
+    end
+    node:SetAttribute("BrainrotInfoGradientAnimated", true)
+
+    local baseColorKeypoints = node.Color.Keypoints
+    if type(baseColorKeypoints) ~= "table" or #baseColorKeypoints <= 0 then
+        return
+    end
+
+    local baseTransparencyKeypoints = node.Transparency.Keypoints
+    local cycleScale = animationConfig.OffsetRange
+    local cycleDuration = animationConfig.OneWayDuration
+    local updateInterval = animationConfig.UpdateInterval
+
+    task.spawn(function()
+        local elapsed = 0
+        local elapsedSinceUpdate = 0
+
+        while node and node.Parent do
+            local delta = task.wait()
+            elapsed = elapsed + delta
+            elapsedSinceUpdate = elapsedSinceUpdate + delta
+
+            if elapsedSinceUpdate >= updateInterval then
+                elapsedSinceUpdate = 0
+                local shift = modulo01((elapsed / cycleDuration) * cycleScale)
+
+                local okColor, rotatedColor = pcall(function()
+                    return buildRotatedColorSequence(baseColorKeypoints, shift)
+                end)
+                if okColor and rotatedColor then
+                    node.Color = rotatedColor
+                end
+
+                if type(baseTransparencyKeypoints) == "table" and #baseTransparencyKeypoints > 0 then
+                    local okTransparency, rotatedTransparency = pcall(function()
+                        return buildRotatedNumberSequence(baseTransparencyKeypoints, shift)
+                    end)
+                    if okTransparency and rotatedTransparency then
+                        node.Transparency = rotatedTransparency
+                    end
+                end
+            end
+        end
+    end)
+end
 
 function BrainrotService:_warnMissingDisplayPath(pathKey, pathText)
     local key = tostring(pathKey or "")
@@ -432,6 +809,8 @@ function BrainrotService:_applyDisplayGradient(label, gradientPath, pathKey)
         if not ok then
             clonedNode:Destroy()
             self:_warnMissingDisplayPath(pathKey, gradientPath)
+        else
+            self:_tryStartDisplayGradientAnimation(clonedNode, gradientPath, pathKey)
         end
     end
 end
@@ -521,6 +900,7 @@ function BrainrotService:_attachPlacedInfoUi(placedInstance, brainrotDefinition)
     if qualityLabel then
         qualityLabel.Visible = true
         qualityLabel.Text = tostring(qualityName)
+        applyQualityStrokeColorRule(qualityLabel, qualityId)
         self:_applyDisplayGradient(qualityLabel, qualityGradientPath, "Quality:" .. tostring(qualityId))
     end
 
@@ -582,6 +962,59 @@ function BrainrotService:_clearClaimConnections(player)
     self:_disconnectConnections(self._claimConnectionsByUserId[userId])
     self._claimConnectionsByUserId[userId] = nil
     self._claimTouchDebounceByUserId[userId] = nil
+
+    local claimsByPositionKey = self._claimsByUserId[userId]
+    if type(claimsByPositionKey) == "table" then
+        for _, claimInfo in pairs(claimsByPositionKey) do
+            if claimInfo and claimInfo._currentPressTween then
+                claimInfo._currentPressTween:Cancel()
+                claimInfo._currentPressTween = nil
+            end
+
+            if claimInfo and claimInfo._touchHighlightTween then
+                claimInfo._touchHighlightTween:Cancel()
+                claimInfo._touchHighlightTween = nil
+            end
+
+            if claimInfo and claimInfo._touchHighlight then
+                claimInfo._touchHighlight:Destroy()
+                claimInfo._touchHighlight = nil
+            end
+
+            local pressPart = claimInfo.TouchPart or claimInfo.ClaimPart
+            local pressBaseCFrame = claimInfo.TouchPart and claimInfo.TouchBaseCFrame or claimInfo.ClaimBaseCFrame
+            if pressPart and pressPart.Parent and pressBaseCFrame then
+                pressPart.CFrame = pressBaseCFrame
+            end
+        end
+    end
+
+    local claimEffectByPosition = self._claimEffectByUserId[userId]
+    if type(claimEffectByPosition) == "table" then
+        local pendingEffectKeys = {}
+        for positionKey in pairs(claimEffectByPosition) do
+            table.insert(pendingEffectKeys, positionKey)
+        end
+
+        for _, positionKey in ipairs(pendingEffectKeys) do
+            self:_destroyClaimTouchEffectForPosition(userId, positionKey)
+        end
+    end
+    self._claimEffectByUserId[userId] = nil
+
+    local claimBounceByPosition = self._claimBounceStateByUserId[userId]
+    if type(claimBounceByPosition) == "table" then
+        local pendingKeys = {}
+        for positionKey in pairs(claimBounceByPosition) do
+            table.insert(pendingKeys, positionKey)
+        end
+
+        for _, positionKey in ipairs(pendingKeys) do
+            self:_clearClaimBounceState(userId, positionKey, true)
+        end
+    end
+    self._claimBounceStateByUserId[userId] = nil
+
     self._claimsByUserId[userId] = nil
 end
 
@@ -605,6 +1038,19 @@ function BrainrotService:_clearRuntimePlaced(player)
             modelOrPart:Destroy()
         end
     end
+
+    local claimBounceByPosition = self._claimBounceStateByUserId[userId]
+    if type(claimBounceByPosition) == "table" then
+        local pendingKeys = {}
+        for positionKey in pairs(claimBounceByPosition) do
+            table.insert(pendingKeys, positionKey)
+        end
+
+        for _, positionKey in ipairs(pendingKeys) do
+            self:_clearClaimBounceState(userId, positionKey, false)
+        end
+    end
+    self._claimBounceStateByUserId[userId] = nil
 
     self._runtimePlacedByUserId[userId] = nil
 end
@@ -1278,6 +1724,7 @@ function BrainrotService:Init(dependencies)
 
     self._brainrotStateSyncEvent = self._remoteEventService:GetEvent("BrainrotStateSync")
     self._requestBrainrotStateSyncEvent = self._remoteEventService:GetEvent("RequestBrainrotStateSync")
+    self._claimCashFeedbackEvent = self._remoteEventService:GetEvent("ClaimCashFeedback")
 
     if self._requestBrainrotStateSyncEvent then
         self._requestBrainrotStateSyncEvent.OnServerEvent:Connect(function(player)
@@ -1552,6 +1999,508 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
     self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
 end
 
+function BrainrotService:_clearClaimBounceState(userId, positionKey, restoreToBase)
+    local claimBounceByPosition = self._claimBounceStateByUserId[userId]
+    if type(claimBounceByPosition) ~= "table" then
+        return
+    end
+
+    local state = claimBounceByPosition[positionKey]
+    if type(state) ~= "table" then
+        return
+    end
+
+    claimBounceByPosition[positionKey] = nil
+
+    if state.CurrentTween then
+        state.CurrentTween:Cancel()
+        state.CurrentTween = nil
+    end
+
+    if state.Connection then
+        state.Connection:Disconnect()
+        state.Connection = nil
+    end
+
+    if restoreToBase and state.Target and state.Target.Parent and state.BasePivot then
+        setInstancePivotCFrame(state.Target, state.BasePivot)
+    end
+
+    if state.PivotValue then
+        state.PivotValue:Destroy()
+        state.PivotValue = nil
+    end
+end
+
+function BrainrotService:_getClaimTouchEffectTemplate()
+    local rootName = tostring(GameConfig.BRAINROT.ClaimTouchEffectRootName or "Effect")
+    local claimFolderName = tostring(GameConfig.BRAINROT.ClaimTouchEffectFolderName or "Claim")
+
+    local effectRoot = ReplicatedStorage:FindFirstChild(rootName)
+    local claimFolder = effectRoot and effectRoot:FindFirstChild(claimFolderName) or nil
+    if claimFolder then
+        return claimFolder
+    end
+
+    if not self._didWarnMissingClaimEffectTemplate then
+        warn(string.format("[BrainrotService] 找不到领取特效模板目录: ReplicatedStorage/%s/%s", rootName, claimFolderName))
+        self._didWarnMissingClaimEffectTemplate = true
+    end
+
+    return nil
+end
+
+function BrainrotService:_destroyClaimTouchEffectForPosition(userId, positionKey)
+    local claimEffectByPosition = self._claimEffectByUserId[userId]
+    if type(claimEffectByPosition) ~= "table" then
+        return
+    end
+
+    local runtimeNodes = claimEffectByPosition[positionKey]
+    if type(runtimeNodes) == "table" then
+        for _, node in pairs(runtimeNodes) do
+            if node and node.Parent then
+                node:Destroy()
+            end
+        end
+    elseif runtimeNodes and runtimeNodes.Parent then
+        runtimeNodes:Destroy()
+    end
+
+    claimEffectByPosition[positionKey] = nil
+end
+
+function BrainrotService:_playClaimPressAnimation(claimInfo)
+    local pressPart = claimInfo and (claimInfo.TouchPart or claimInfo.ClaimPart)
+    if not (pressPart and pressPart.Parent and pressPart:IsA("BasePart")) then
+        return
+    end
+
+    local isTouchPart = claimInfo and claimInfo.TouchPart == pressPart
+    local baseCFrame = nil
+    if isTouchPart then
+        baseCFrame = claimInfo.TouchBaseCFrame or pressPart.CFrame
+        claimInfo.TouchBaseCFrame = baseCFrame
+    else
+        baseCFrame = claimInfo.ClaimBaseCFrame or pressPart.CFrame
+        claimInfo.ClaimBaseCFrame = baseCFrame
+    end
+
+    claimInfo._pressAnimationToken = (tonumber(claimInfo._pressAnimationToken) or 0) + 1
+    local currentToken = claimInfo._pressAnimationToken
+
+    if claimInfo._currentPressTween then
+        claimInfo._currentPressTween:Cancel()
+        claimInfo._currentPressTween = nil
+    end
+
+    if claimInfo._touchHighlightTween then
+        claimInfo._touchHighlightTween:Cancel()
+        claimInfo._touchHighlightTween = nil
+    end
+
+    if claimInfo._touchHighlight then
+        claimInfo._touchHighlight:Destroy()
+        claimInfo._touchHighlight = nil
+    end
+
+    local highlight = nil
+    if isTouchPart and GameConfig.BRAINROT.ClaimTouchHighlightEnabled ~= false then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "ClaimTouchHighlight"
+        highlight.Adornee = pressPart
+        highlight.DepthMode = GameConfig.BRAINROT.ClaimTouchHighlightAlwaysOnTop == true
+            and Enum.HighlightDepthMode.AlwaysOnTop
+            or Enum.HighlightDepthMode.Occluded
+        highlight.FillColor = GameConfig.BRAINROT.ClaimTouchHighlightFillColor or Color3.fromRGB(255, 235, 130)
+        highlight.FillTransparency = math.clamp(tonumber(GameConfig.BRAINROT.ClaimTouchHighlightFillTransparency) or 0.55, 0, 1)
+        highlight.OutlineColor = GameConfig.BRAINROT.ClaimTouchHighlightOutlineColor or Color3.fromRGB(255, 255, 255)
+        highlight.OutlineTransparency = math.clamp(tonumber(GameConfig.BRAINROT.ClaimTouchHighlightOutlineTransparency) or 0.08, 0, 1)
+        highlight.Parent = pressPart
+        claimInfo._touchHighlight = highlight
+    end
+
+    pressPart.CFrame = baseCFrame
+
+    local pressOffset = math.max(0.05, tonumber(GameConfig.BRAINROT.ClaimPressOffsetY) or 0.2)
+    local downDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimPressDownDuration) or 0.08)
+    local upDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimPressUpDuration) or 0.14)
+
+    local downTween = TweenService:Create(pressPart, TweenInfo.new(downDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        CFrame = baseCFrame * CFrame.new(0, -pressOffset, 0),
+    })
+    claimInfo._currentPressTween = downTween
+    downTween:Play()
+
+    task.spawn(function()
+        downTween.Completed:Wait()
+        if claimInfo._pressAnimationToken ~= currentToken then
+            return
+        end
+
+        local upTween = TweenService:Create(pressPart, TweenInfo.new(upDuration, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            CFrame = baseCFrame,
+        })
+        claimInfo._currentPressTween = upTween
+        upTween:Play()
+        upTween.Completed:Wait()
+
+        if claimInfo._pressAnimationToken ~= currentToken then
+            return
+        end
+
+        claimInfo._currentPressTween = nil
+        if pressPart.Parent then
+            pressPart.CFrame = baseCFrame
+        end
+
+        local activeHighlight = claimInfo._touchHighlight
+        if activeHighlight and activeHighlight.Parent then
+            local fadeOutDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimTouchHighlightFadeOutDuration) or 0.12)
+            local fadeTween = TweenService:Create(activeHighlight, TweenInfo.new(fadeOutDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                FillTransparency = 1,
+                OutlineTransparency = 1,
+            })
+            claimInfo._touchHighlightTween = fadeTween
+            fadeTween:Play()
+            fadeTween.Completed:Wait()
+
+            if claimInfo._touchHighlightTween == fadeTween then
+                claimInfo._touchHighlightTween = nil
+            end
+        end
+
+        if claimInfo._touchHighlight == activeHighlight then
+            claimInfo._touchHighlight = nil
+        end
+        if activeHighlight and activeHighlight.Parent then
+            activeHighlight:Destroy()
+        end
+    end)
+end
+
+function BrainrotService:_playClaimBounceAnimation(player, positionKey)
+    local userId = player.UserId
+    local runtimePlaced = self._runtimePlacedByUserId[userId]
+    if type(runtimePlaced) ~= "table" then
+        return
+    end
+
+    local target = runtimePlaced[positionKey]
+    if not target then
+        return
+    end
+
+    self:_clearClaimBounceState(userId, positionKey, true)
+
+    local basePivot = select(1, getInstancePivotCFrame(target))
+    if not basePivot then
+        return
+    end
+
+    local claimBounceByPosition = ensureTable(self._claimBounceStateByUserId, userId)
+    local state = {
+        Target = target,
+        BasePivot = basePivot,
+        CurrentTween = nil,
+        Connection = nil,
+        PivotValue = nil,
+    }
+    claimBounceByPosition[positionKey] = state
+
+    local pivotValue = Instance.new("CFrameValue")
+    pivotValue.Value = basePivot
+    state.PivotValue = pivotValue
+    state.Connection = pivotValue:GetPropertyChangedSignal("Value"):Connect(function()
+        if state.Target and state.Target.Parent then
+            setInstancePivotCFrame(state.Target, pivotValue.Value)
+        end
+    end)
+
+    local bounceOffset = math.max(0.05, tonumber(GameConfig.BRAINROT.ClaimBrainrotBounceOffsetY) or 0.75)
+    local upDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimBrainrotBounceUpDuration) or 0.1)
+    local downDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimBrainrotBounceDownDuration) or 0.18)
+
+    local upTween = TweenService:Create(pivotValue, TweenInfo.new(upDuration, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Value = basePivot * CFrame.new(0, bounceOffset, 0),
+    })
+    state.CurrentTween = upTween
+    upTween:Play()
+
+    task.spawn(function()
+        upTween.Completed:Wait()
+        local activeByPosition = self._claimBounceStateByUserId[userId]
+        if not (activeByPosition and activeByPosition[positionKey] == state) then
+            return
+        end
+
+        local downTween = TweenService:Create(pivotValue, TweenInfo.new(downDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Value = basePivot,
+        })
+        state.CurrentTween = downTween
+        downTween:Play()
+        downTween.Completed:Wait()
+
+        local latestByPosition = self._claimBounceStateByUserId[userId]
+        if latestByPosition and latestByPosition[positionKey] == state then
+            self:_clearClaimBounceState(userId, positionKey, true)
+        end
+    end)
+end
+
+function BrainrotService:_playClaimTouchEffect(player, claimInfo)
+    local effectAnchorPart = claimInfo and claimInfo.TouchPart
+    if not (effectAnchorPart and effectAnchorPart.Parent and effectAnchorPart:IsA("BasePart") and claimInfo and claimInfo.PositionKey) then
+        return
+    end
+
+    local userId = player.UserId
+    local positionKey = tostring(claimInfo.PositionKey)
+    self:_destroyClaimTouchEffectForPosition(userId, positionKey)
+
+    local templateFolder = self:_getClaimTouchEffectTemplate()
+    if not templateFolder then
+        return
+    end
+
+    local claimEffectByPosition = ensureTable(self._claimEffectByUserId, userId)
+    local runtimeNodes = {}
+    claimEffectByPosition[positionKey] = runtimeNodes
+
+    local function trackRuntimeNode(node)
+        if node then
+            table.insert(runtimeNodes, node)
+        end
+        return node
+    end
+
+    local function findTemplateEmitter(emitterName)
+        local direct = templateFolder:FindFirstChild(emitterName)
+        if direct and direct:IsA("ParticleEmitter") then
+            return direct
+        end
+
+        local nested = templateFolder:FindFirstChild(emitterName, true)
+        if nested and nested:IsA("ParticleEmitter") then
+            return nested
+        end
+
+        return nil
+    end
+
+    local function cloneEmitterToTouch(emitterName)
+        local templateEmitter = findTemplateEmitter(emitterName)
+        if not templateEmitter then
+            return nil
+        end
+
+        local emitter = templateEmitter:Clone()
+        emitter.Enabled = false
+        emitter.Parent = effectAnchorPart
+        return trackRuntimeNode(emitter)
+    end
+
+    local function destroyIfCurrent(emitter)
+        local latestByPosition = self._claimEffectByUserId[userId]
+        if not (latestByPosition and latestByPosition[positionKey] == runtimeNodes) then
+            return
+        end
+
+        if emitter and emitter.Parent then
+            emitter:Destroy()
+        end
+    end
+
+    local function emitOnceAndDestroyByLifetime(emitter)
+        if not (emitter and emitter:IsA("ParticleEmitter")) then
+            return
+        end
+
+        emitter:Emit(1)
+        emitter.Enabled = false
+
+        local maxLifetime = 0.05
+        if emitter.Lifetime then
+            maxLifetime = math.max(maxLifetime, tonumber(emitter.Lifetime.Max) or 0)
+        end
+
+        task.delay(maxLifetime + 0.03, function()
+            destroyIfCurrent(emitter)
+        end)
+    end
+
+    local function playTimedEmitter(emitter, duration)
+        if not (emitter and emitter:IsA("ParticleEmitter")) then
+            return
+        end
+
+        local lifetime = math.max(0.05, tonumber(duration) or 1.5)
+        emitter.Enabled = true
+
+        task.delay(lifetime, function()
+            if emitter and emitter.Parent then
+                emitter.Enabled = false
+            end
+            destroyIfCurrent(emitter)
+        end)
+    end
+
+    local glowName = tostring(GameConfig.BRAINROT.ClaimTouchEffectGlowName or "Glow")
+    local smokeName = tostring(GameConfig.BRAINROT.ClaimTouchEffectSmokeName or "Smoke")
+    local moneyName = tostring(GameConfig.BRAINROT.ClaimTouchEffectMoneyName or "Money")
+    local starsName = tostring(GameConfig.BRAINROT.ClaimTouchEffectStarsName or "Stars")
+    local moneyStarsLifetime = math.max(0.1, tonumber(GameConfig.BRAINROT.ClaimTouchEffectMoneyStarsLifetime) or 1.5)
+
+    emitOnceAndDestroyByLifetime(cloneEmitterToTouch(glowName))
+    emitOnceAndDestroyByLifetime(cloneEmitterToTouch(smokeName))
+    playTimedEmitter(cloneEmitterToTouch(moneyName), moneyStarsLifetime)
+    playTimedEmitter(cloneEmitterToTouch(starsName), moneyStarsLifetime)
+
+    task.delay(moneyStarsLifetime + 0.2, function()
+        local latestByPosition = self._claimEffectByUserId[userId]
+        if latestByPosition and latestByPosition[positionKey] == runtimeNodes then
+            latestByPosition[positionKey] = nil
+        end
+    end)
+end
+function BrainrotService:_pushClaimCashFeedback(player, claimInfo)
+    if not self._claimCashFeedbackEvent then
+        return
+    end
+
+    local touchPart = claimInfo and claimInfo.TouchPart
+    local touchPosition = (touchPart and touchPart.Parent and touchPart:IsA("BasePart")) and touchPart.Position or nil
+    local touchUpVector = (touchPart and touchPart.Parent and touchPart:IsA("BasePart")) and touchPart.CFrame.UpVector or Vector3.new(0, 1, 0)
+    local touchSize = (touchPart and touchPart.Parent and touchPart:IsA("BasePart")) and touchPart.Size or nil
+
+    self._claimCashFeedbackEvent:FireClient(player, {
+        positionKey = claimInfo and claimInfo.PositionKey or nil,
+        claimKey = claimInfo and claimInfo.ClaimKey or nil,
+        touchPosition = touchPosition,
+        touchUpVector = touchUpVector,
+        touchSize = touchSize,
+        timestamp = os.clock(),
+    })
+end
+
+function BrainrotService:_playClaimFeedback(player, claimInfo)
+    self:_playClaimPressAnimation(claimInfo)
+    self:_playClaimBounceAnimation(player, claimInfo.PositionKey)
+    self:_playClaimTouchEffect(player, claimInfo)
+    self:_pushClaimCashFeedback(player, claimInfo)
+end
+
+function BrainrotService:_shouldTriggerClaimByTouch(claimState, character, hitPart)
+    if type(claimState.TouchingParts) ~= "table" then
+        claimState.TouchingParts = {}
+    end
+
+    if not hitPart then
+        return false
+    end
+
+    claimState.Character = character or claimState.Character
+
+    if (tonumber(claimState.TouchingCount) or 0) > 0 then
+        local triggerPart = claimState.TriggerPart
+        local trackedCharacter = claimState.Character
+        if triggerPart and trackedCharacter and not isCharacterOccupyingPart(trackedCharacter, triggerPart) then
+            claimState.TouchingParts = {}
+            claimState.TouchingCount = 0
+            claimState.IsTriggeredWhileOccupied = false
+        end
+    end
+
+    if claimState.TouchingParts[hitPart] then
+        return false
+    end
+
+    claimState.TouchingParts[hitPart] = true
+    claimState.TouchingCount = (tonumber(claimState.TouchingCount) or 0) + 1
+    claimState.ReleaseMonitorToken = (tonumber(claimState.ReleaseMonitorToken) or 0) + 1
+
+    -- 同一轮占用期间只允许触发一次，避免 Touch 按压动画导致的断触重触二次触发
+    if claimState.IsTriggeredWhileOccupied == true then
+        return false
+    end
+
+    local nowClock = os.clock()
+    local lastClock = tonumber(claimState.LastTriggerClock) or 0
+    local touchDebounce = math.max(0.05, tonumber(GameConfig.BRAINROT.ClaimTouchDebounceSeconds) or 0.35)
+    if nowClock - lastClock < touchDebounce then
+        return false
+    end
+
+    claimState.LastTriggerClock = nowClock
+    claimState.IsTriggeredWhileOccupied = true
+    return true
+end
+
+function BrainrotService:_handleClaimTouchEnded(claimState, hitPart)
+    if type(claimState.TouchingParts) ~= "table" then
+        claimState.TouchingParts = {}
+    end
+
+    if hitPart and claimState.TouchingParts[hitPart] then
+        claimState.TouchingParts[hitPart] = nil
+        claimState.TouchingCount = math.max(0, (tonumber(claimState.TouchingCount) or 0) - 1)
+    end
+
+    if (tonumber(claimState.TouchingCount) or 0) > 0 then
+        return
+    end
+
+    claimState.TouchingParts = {}
+    claimState.TouchingCount = 0
+
+    local function unlockTrigger()
+        claimState.IsTriggeredWhileOccupied = false
+        claimState.LastTriggerClock = 0
+    end
+
+    local triggerPart = claimState.TriggerPart
+    local character = claimState.Character
+    if not (triggerPart and triggerPart.Parent and character and character.Parent) then
+        unlockTrigger()
+        return
+    end
+
+    local monitorToken = (tonumber(claimState.ReleaseMonitorToken) or 0) + 1
+    claimState.ReleaseMonitorToken = monitorToken
+
+    -- Touch 按压会短暂改变碰撞状态，这里增加“连续离开判定”，
+    -- 避免站着不动时因瞬态抖动被误判离开并解锁二次触发。
+    task.spawn(function()
+        local missingOccupancyTicks = 0
+        local requiredMissingTicks = 2
+
+        while claimState.ReleaseMonitorToken == monitorToken do
+            if (tonumber(claimState.TouchingCount) or 0) > 0 then
+                return
+            end
+
+            local currentTriggerPart = claimState.TriggerPart
+            local currentCharacter = claimState.Character
+            if not (currentTriggerPart and currentTriggerPart.Parent and currentCharacter and currentCharacter.Parent) then
+                unlockTrigger()
+                return
+            end
+
+            if isCharacterOccupyingPart(currentCharacter, currentTriggerPart) then
+                missingOccupancyTicks = 0
+            else
+                missingOccupancyTicks = missingOccupancyTicks + 1
+                if missingOccupancyTicks >= requiredMissingTicks then
+                    unlockTrigger()
+                    return
+                end
+            end
+
+            task.wait(0.05)
+        end
+    end)
+end
+
 function BrainrotService:_claimPositionGold(player, positionKey)
     local playerData, _brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
     if not playerData or not placedBrainrots or not productionState then
@@ -1620,11 +2569,28 @@ function BrainrotService:_bindHomeClaims(player, homeModel)
     local connectionList = {}
     self._claimConnectionsByUserId[userId] = connectionList
 
-    local debounceByClaim = ensureTable(self._claimTouchDebounceByUserId, userId)
-    local debounceSeconds = tonumber(GameConfig.BRAINROT.ClaimTouchDebounceSeconds) or 0.35
+    local claimStateByClaimKey = ensureTable(self._claimTouchDebounceByUserId, userId)
 
     for _, claimInfo in pairs(claimsByPositionKey) do
-        table.insert(connectionList, claimInfo.ClaimPart.Touched:Connect(function(hitPart)
+        local triggerPart = claimInfo.TouchPart
+        if not (triggerPart and triggerPart:IsA("BasePart")) then
+            warn(string.format("[BrainrotService] Claim 触碰节点缺失，已跳过: %s（需要 Touch/BasePart）", tostring(claimInfo and claimInfo.ClaimKey or "Unknown")))
+            continue
+        end
+
+        local claimKey = tostring(claimInfo.ClaimKey)
+        local claimState = ensureTable(claimStateByClaimKey, claimKey)
+        if type(claimState.TouchingParts) ~= "table" then
+            claimState.TouchingParts = {}
+        end
+        claimState.TouchingCount = tonumber(claimState.TouchingCount) or 0
+        claimState.LastTriggerClock = tonumber(claimState.LastTriggerClock) or 0
+        claimState.IsTriggeredWhileOccupied = claimState.IsTriggeredWhileOccupied == true
+        claimState.ReleaseMonitorToken = tonumber(claimState.ReleaseMonitorToken) or 0
+        claimState.TriggerPart = triggerPart
+        claimState.Character = player.Character
+
+        table.insert(connectionList, triggerPart.Touched:Connect(function(hitPart)
             local character = hitPart and hitPart.Parent
             if not character then
                 return
@@ -1635,15 +2601,26 @@ function BrainrotService:_bindHomeClaims(player, homeModel)
                 return
             end
 
-            local nowClock = os.clock()
-            local claimKey = tostring(claimInfo.ClaimKey)
-            local lastClock = tonumber(debounceByClaim[claimKey]) or 0
-            if nowClock - lastClock < debounceSeconds then
+            if not self:_shouldTriggerClaimByTouch(claimState, character, hitPart) then
                 return
             end
 
-            debounceByClaim[claimKey] = nowClock
+            self:_playClaimFeedback(player, claimInfo)
             self:_claimPositionGold(player, claimInfo.PositionKey)
+        end))
+
+        table.insert(connectionList, triggerPart.TouchEnded:Connect(function(hitPart)
+            local character = hitPart and hitPart.Parent
+            if not character then
+                return
+            end
+
+            local touchedPlayer = Players:GetPlayerFromCharacter(character)
+            if touchedPlayer ~= player then
+                return
+            end
+
+            self:_handleClaimTouchEnded(claimState, hitPart)
         end))
     end
 end
@@ -1821,10 +2798,24 @@ function BrainrotService:_scanHomeClaims(homeModel)
                     end
                 end
 
+                local touchPart = descendant:FindFirstChild("Touch")
+                if touchPart and not touchPart:IsA("BasePart") then
+                    touchPart = nil
+                end
+                if not touchPart then
+                    local touchCandidate = descendant:FindFirstChild("Touch", true)
+                    if touchCandidate and touchCandidate:IsA("BasePart") then
+                        touchPart = touchCandidate
+                    end
+                end
+
                 claimsByPositionKey[positionKey] = {
                     PositionKey = positionKey,
                     ClaimPart = descendant,
+                    TouchPart = touchPart,
                     ClaimKey = descendant.Name,
+                    ClaimBaseCFrame = descendant.CFrame,
+                    TouchBaseCFrame = touchPart and touchPart.CFrame or nil,
                     GoldInfoGui = goldInfoGui,
                     CurrentGoldLabel = currentGoldLabel,
                     OfflineGoldLabel = offlineGoldLabel,
@@ -2157,4 +3148,22 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
     end
 end
 return BrainrotService
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

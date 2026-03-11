@@ -39,11 +39,11 @@ BrainrotDisplayConfig.Quality = {
     },
     [8] = {
         Name = "God",
-        GradientPath = "StarterGui/Gradients/Animation/Quality/Secret",
+        GradientPath = "StarterGui/Gradients/Animation/Quality/God",
     },
     [9] = {
         Name = "OG",
-        GradientPath = "StarterGui/Gradients/Animation/Quality/Secret",
+        GradientPath = "StarterGui/Gradients/Animation/Quality/OG",
     },
 }
 
@@ -79,3 +79,6 @@ BrainrotDisplayConfig.Rarity = {
 }
 
 return BrainrotDisplayConfig
+
+
+

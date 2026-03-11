@@ -10,124 +10,204 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.7"
+GameConfig.VERSION = "V1.8.2"
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
-    ContainerName = "PlayerHome",
-    Prefix = "Home",
-    Count = 5,
-    HomeBaseName = "HomeBase",
-    SpawnLocationName = "SpawnLocation",
+	ContainerName = "PlayerHome",
+	Prefix = "Home",
+	Count = 5,
+	HomeBaseName = "HomeBase",
+	SpawnLocationName = "SpawnLocation",
 }
 
 GameConfig.DATASTORE = {
-    StudioName = "Brainrots_PlayerData_STUDIO_V1",
-    LiveName = "Brainrots_PlayerData_LIVE_V1",
-    EnableInStudio = true,
-    AutoSaveInterval = 60,
-    MaxRetries = 3,
-    RetryDelay = 1.5,
+	StudioName = "Brainrots_PlayerData_STUDIO_V1",
+	LiveName = "Brainrots_PlayerData_LIVE_V1",
+	EnableInStudio = true,
+	AutoSaveInterval = 60,
+	MaxRetries = 3,
+	RetryDelay = 1.5,
 }
 GameConfig.DATASTORE.ActiveName = RunService:IsStudio()
-    and GameConfig.DATASTORE.StudioName
-    or GameConfig.DATASTORE.LiveName
+	and GameConfig.DATASTORE.StudioName
+	or GameConfig.DATASTORE.LiveName
 
 GameConfig.GM = {
-    EnabledOnlyInStudio = true,
-    AllowAllUsers = true,
-    DeveloperUserIds = {
-        -- [123456789] = true,
-    },
-    GroupAdminRankThreshold = 254,
+	EnabledOnlyInStudio = true,
+	AllowAllUsers = true,
+	DeveloperUserIds = {
+		-- [123456789] = true,
+	},
+	GroupAdminRankThreshold = 254,
 }
 
 GameConfig.BRAINROT = {
-    ModelRootFolderName = "Model",
-    RuntimeFolderName = "PlacedBrainrots",
-    PromptHoldDuration = 1,
-    ModelPlacementOffsetY = 0,
-    PlatformAttachmentName = "BrainrotAttachment",
-    PlatformTriggerName = "Trigger",
-    PositionPrefix = "Position",
-    ClaimPrefix = "Claim",
-    GoldInfoGuiName = "GoldInfo",
-    CurrentGoldLabelName = "CurrentGold",
-    OfflineGoldLabelName = "OfflineGold",
-    OfflineProductionCapSeconds = 3600,
-    ClaimTouchDebounceSeconds = 0.35,
-    InfoTemplateRootName = "UI",
-    InfoTemplateName = "BaseInfo",
-    InfoAttachmentName = "Info",
-    InfoTitleRootName = "Title",
-    InfoNameLabelName = "Name",
-    InfoQualityLabelName = "Quality",
-    InfoRarityLabelName = "Rarity",
-    InfoSpeedLabelName = "Speed",
-    HideNormalRarity = true,
+	ModelRootFolderName = "Model",
+	RuntimeFolderName = "PlacedBrainrots",
+	PromptHoldDuration = 1,
+	ModelPlacementOffsetY = 0,
+	PlatformAttachmentName = "BrainrotAttachment",
+	PlatformTriggerName = "Trigger",
+	PositionPrefix = "Position",
+	ClaimPrefix = "Claim",
+	GoldInfoGuiName = "GoldInfo",
+	CurrentGoldLabelName = "CurrentGold",
+	OfflineGoldLabelName = "OfflineGold",
+	OfflineProductionCapSeconds = 3600,
+	ClaimTouchDebounceSeconds = 0.3, -- 再次触碰触发的最小间隔（秒，需先离开 Claim/Touch）
+	ClaimPressOffsetY = 0.65, -- Claim 按压位移量（Y 轴向下，单位 Stud；优先作用在 Claim/Touch）
+	ClaimPressDownDuration = 0.15, -- Claim 按下阶段时长（秒）
+	ClaimPressUpDuration = 0.3, -- Claim 回弹阶段时长（秒）
+	ClaimTouchHighlightEnabled = true, -- Touch 按压弹起期间启用高亮
+	ClaimTouchHighlightAlwaysOnTop = false, -- Touch 高亮是否始终显示在前（减少遮挡）
+	ClaimTouchHighlightFillColor = Color3.fromRGB(255, 235, 130), -- Touch 高亮填充颜色
+	ClaimTouchHighlightFillTransparency = 0.55, -- Touch 高亮填充透明度
+	ClaimTouchHighlightOutlineColor = Color3.fromRGB(255, 255, 255), -- Touch 高亮描边颜色
+	ClaimTouchHighlightOutlineTransparency = 1, -- Touch 高亮描边透明度
+	ClaimTouchHighlightFadeOutDuration = 0.12, -- Touch 回弹结束后高亮淡出时长（秒）
+	ClaimBrainrotBounceOffsetY = 4, -- 领取时脑红弹跳高度（Y 轴向上，单位 Stud）
+	ClaimBrainrotBounceUpDuration = 0.3, -- 脑红上升阶段时长（秒）
+	ClaimBrainrotBounceDownDuration = 0.2, -- 脑红回落阶段时长（秒）
+	ClaimTouchEffectRootName = "Effect", -- 领取特效模板所在的根目录（ReplicatedStorage 下）
+	ClaimTouchEffectFolderName = "Claim", -- 领取特效发射器模板目录（ReplicatedStorage/Effect/Claim）
+	ClaimTouchEffectGlowName = "Glow", -- Claim 目录下 Glow 粒子发射器（Emit(1) 后按生命周期销毁）
+	ClaimTouchEffectSmokeName = "Smoke", -- Claim 目录下 Smoke 粒子发射器（Emit(1) 后按生命周期销毁）
+	ClaimTouchEffectMoneyName = "Money", -- Claim 目录下 Money 粒子发射器（挂载后持续 1.5 秒）
+	ClaimTouchEffectStarsName = "Stars", -- Claim 目录下 Stars 粒子发射器（挂载后持续 1.5 秒）
+	ClaimTouchEffectMoneyStarsLifetime = 1.5, -- Money/Stars 挂载后保留时长（秒）
+	ClaimCoinCollectRuntimeFolderName = "ClaimCoinCollectFx", -- 金币图标特效运行时容器（Workspace 下）
+	ClaimCoinCollectIconAssetId = "rbxassetid://92295649647469", -- V1.8.2 金币图标资源
+	ClaimCoinCollectIconCount = 8, -- 单次默认生成图标数（会被 Min/Max 约束）
+	ClaimCoinCollectIconCountMin = 6, -- 单次最少生成图标数
+	ClaimCoinCollectIconCountMax = 12, -- 单次最多生成图标数
+	ClaimCoinCollectSpawnHeight = 3.2, -- 起始点位于 Touch 顶部上方高度（Stud）
+	ClaimCoinCollectIconSizeStuds = 1.5, -- 图标基础显示尺寸（BillboardGui 尺寸）
+	ClaimCoinCollectIconSizeScaleMin = 0.9, -- 图标尺寸随机缩放最小值
+	ClaimCoinCollectIconSizeScaleMax = 1.1, -- 图标尺寸随机缩放最大值
+	ClaimCoinCollectPopFromScale = 0.8, -- 图标出现时起始缩放
+	ClaimCoinCollectPopDuration = 0.12, -- 图标出现弹出时长（秒）
+	ClaimCoinCollectBurstDuration = 0.24, -- 爆裂阶段时长（秒）
+	ClaimCoinCollectBurstRadiusMin = 5.0, -- 爆裂水平半径最小值（Stud）
+	ClaimCoinCollectBurstRadiusMax = 16.8, -- 爆裂水平半径最大值（Stud）
+	ClaimCoinCollectBurstVerticalOffsetMin = -0.2, -- 爆裂阶段垂直偏移最小值（Stud）
+	ClaimCoinCollectBurstVerticalOffsetMax = 1.0, -- 爆裂阶段垂直偏移最大值（Stud）
+	ClaimCoinCollectStartDelayMax = 0.045, -- 每个图标起始错峰最大延迟（秒）
+	ClaimCoinCollectAttractDurationMin = 0.45, -- 吸附阶段最短时长（秒）
+	ClaimCoinCollectAttractDurationMax = 0.54, -- 吸附阶段最长时长（秒）
+	ClaimCoinCollectTargetOffsetY = 2, -- 吸附终点相对 HumanoidRootPart 的 Y 偏移
+	ClaimCoinCollectArcHeightMin = 0.25, -- 吸附弧线高度最小值（Stud）
+	ClaimCoinCollectArcHeightMax = 0.8, -- 吸附弧线高度最大值（Stud）
+	ClaimCoinCollectArcHorizontalJitter = 0.75, -- 吸附弧线水平抖动范围（Stud）
+	ClaimCoinCollectDestroyDistance = 0.8, -- 接近终点后判定销毁的距离阈值（Stud）
+	ClaimCoinCollectFadeOutDuration = 0.075, -- 到达终点时淡出缩小时长（秒）
+	InfoTemplateRootName = "UI",
+	InfoTemplateName = "BaseInfo",
+	InfoAttachmentName = "Info",
+	InfoTitleRootName = "Title",
+	InfoNameLabelName = "Name",
+	InfoQualityLabelName = "Quality",
+	InfoRarityLabelName = "Rarity",
+	InfoSpeedLabelName = "Speed",
+	HideNormalRarity = true,
+	MythicQualityGradientAnimationEnabled = true, -- V1.9: Mythic 品质渐变左右循环动画开关
+	MythicQualityGradientOffsetRange = 1, -- V1.9: Mythic 渐变左右偏移范围（UIGradient.Offset.X）
+	MythicQualityGradientOneWayDuration = 2.4, -- V1.9: Mythic 渐变单程移动时长（秒）
+	MythicQualityGradientUpdateInterval = 0.033, -- V1.9: Mythic 渐变刷新间隔（秒，越小越平滑）
+	SecretQualityGradientAnimationEnabled = true, -- V1.9: Secret 品质渐变左右循环动画开关（独立于 Mythic）
+	SecretQualityGradientOffsetRange = 1, -- V1.9: Secret 渐变左右偏移范围（UIGradient.Offset.X）
+	SecretQualityGradientOneWayDuration = 2.4, -- V1.9: Secret 渐变单程移动时长（秒）
+	SecretQualityGradientUpdateInterval = 0.033, -- V1.9: Secret 渐变刷新间隔（秒，越小越平滑）
+	GodQualityGradientAnimationEnabled = true, -- V2.0.1: God 品质渐变左右循环动画开关（独立参数）
+	GodQualityGradientOffsetRange = 1, -- V2.0.1: God 渐变左右偏移范围（UIGradient.Offset.X）
+	GodQualityGradientOneWayDuration = 2.4, -- V2.0.1: God 渐变单程移动时长（秒）
+	GodQualityGradientUpdateInterval = 0.033, -- V2.0.1: God 渐变刷新间隔（秒）
+	OGQualityGradientAnimationEnabled = true, -- V2.0.1: OG 品质渐变左右循环动画开关（独立参数）
+	OGQualityGradientOffsetRange = 1, -- V2.0.1: OG 渐变左右偏移范围（UIGradient.Offset.X）
+	OGQualityGradientOneWayDuration = 2.4, -- V2.0.1: OG 渐变单程移动时长（秒）
+	OGQualityGradientUpdateInterval = 0.033, -- V2.0.1: OG 渐变刷新间隔（秒）
+	LavaRarityGradientAnimationEnabled = true, -- V2.0.1: Lava 稀有度渐变左右循环动画开关（独立参数）
+	LavaRarityGradientOffsetRange = 1, -- V2.0.1: Lava 渐变左右偏移范围（UIGradient.Offset.X）
+	LavaRarityGradientOneWayDuration = 2.4, -- V2.0.1: Lava 渐变单程移动时长（秒）
+	LavaRarityGradientUpdateInterval = 0.033, -- V2.0.1: Lava 渐变刷新间隔（秒）
+	HackerRarityGradientAnimationEnabled = true, -- V2.0.1: Hacker 稀有度渐变左右循环动画开关（独立参数）
+	HackerRarityGradientOffsetRange = 1, -- V2.0.1: Hacker 渐变左右偏移范围（UIGradient.Offset.X）
+	HackerRarityGradientOneWayDuration = 2.4, -- V2.0.1: Hacker 渐变单程移动时长（秒）
+	HackerRarityGradientUpdateInterval = 0.033, -- V2.0.1: Hacker 渐变刷新间隔（秒）
+	RainbowRarityGradientAnimationEnabled = true, -- V2.0.1: Rainbow 稀有度渐变左右循环动画开关（独立参数）
+	RainbowRarityGradientOffsetRange = 1, -- V2.0.1: Rainbow 渐变左右偏移范围（UIGradient.Offset.X）
+	RainbowRarityGradientOneWayDuration = 2.4, -- V2.0.1: Rainbow 渐变单程移动时长（秒）
+	RainbowRarityGradientUpdateInterval = 0.033, -- V2.0.1: Rainbow 渐变刷新间隔（秒）
 }
 
 GameConfig.SOCIAL = {
-    InfoRootName = "Information",
-    InfoPartName = "InfoPart",
-    SurfaceGuiName = "SurfaceGui01",
-    PromptHoldDuration = 1,
+	InfoRootName = "Information",
+	InfoPartName = "InfoPart",
+	SurfaceGuiName = "SurfaceGui01",
+	PromptHoldDuration = 1,
 }
 
 GameConfig.FRIEND_BONUS = {
-    PercentPerFriend = 10,
-    MaxFriendCount = 4,
+	PercentPerFriend = 10,
+	MaxFriendCount = 4,
 }
 
 GameConfig.QUICK_TELEPORT = {
-    RequestDebounceSeconds = 0.25,
-    DefaultYOffset = 5,
-    Shop01 = {
-        ModelName = "Shop01",
-        TouchPartName = "PrisonerTouch",
-        YOffset = 5,
-    },
-    Shop02 = {
-        ModelName = "Shop02",
-        TouchPartName = "PrisonerTouch",
-        YOffset = 5,
-    },
+	RequestDebounceSeconds = 0.25,
+	DefaultYOffset = 5,
+	Shop01 = {
+		ModelName = "Shop01",
+		TouchPartName = "PrisonerTouch",
+		YOffset = 5,
+	},
+	Shop02 = {
+		ModelName = "Shop02",
+		TouchPartName = "PrisonerTouch",
+		YOffset = 5,
+	},
 }
 
 GameConfig.LEADERBOARD = {
-    CashStatName = "Cash",
+	CashStatName = "Cash",
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {
-    Version = 1,
-    Currency = {
-        Coins = 0,
-    },
-    Growth = {
-        PowerLevel = 1,
-        RebirthLevel = 0,
-    },
-    HomeState = {
-        HomeId = "",
-        PlacedBrainrots = {},
-        ProductionState = {},
-    },
-    BrainrotData = {
-        NextInstanceId = 1,
-        EquippedInstanceId = 0,
-        StarterGranted = false,
-        Inventory = {},
-    },
-    Meta = {
-        CreatedAt = 0,
-        LastLoginAt = 0,
-        LastLogoutAt = 0,
-        LastSaveAt = 0,
-    },
-    SocialState = {
-        LikesReceived = 0,
-        LikedPlayerUserIds = {},
-    },
+	Version = 1,
+	Currency = {
+		Coins = 0,
+	},
+	Growth = {
+		PowerLevel = 1,
+		RebirthLevel = 0,
+	},
+	HomeState = {
+		HomeId = "",
+		PlacedBrainrots = {},
+		ProductionState = {},
+	},
+	BrainrotData = {
+		NextInstanceId = 1,
+		EquippedInstanceId = 0,
+		StarterGranted = false,
+		Inventory = {},
+	},
+	Meta = {
+		CreatedAt = 0,
+		LastLoginAt = 0,
+		LastLogoutAt = 0,
+		LastSaveAt = 0,
+	},
+	SocialState = {
+		LikesReceived = 0,
+		LikedPlayerUserIds = {},
+	},
 }
 
 return GameConfig
+
+
+
+
+
+
+
