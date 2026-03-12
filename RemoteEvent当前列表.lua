@@ -123,5 +123,9 @@ ReplicatedStorage
 =====================================================
 列表结束
 =====================================================
-]]
 
+五、V2.1 武器击飞补充（2026-03-12）
+1. 新增 WeaponKnockbackService（服务端）。
+2. 判定方式：Tool.Activated + Handle.Touched（服务端）。
+3. 本次无新增 RemoteEvent，RemoteNames.lua / RemoteEventService.lua 结构不变。
+]]

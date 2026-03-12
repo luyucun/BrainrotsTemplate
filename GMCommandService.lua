@@ -37,6 +37,7 @@ GMCommandService._currencyService = nil
 GMCommandService._brainrotService = nil
 GMCommandService._playerDataService = nil
 GMCommandService._homeService = nil
+GMCommandService._weaponService = nil
 GMCommandService._connections = {}
 
 local function isPositiveIntegerString(text)
@@ -67,6 +68,7 @@ function GMCommandService:Init(dependencies, maybeBrainrotService)
         self._brainrotService = dependencies.BrainrotService
         self._playerDataService = dependencies.PlayerDataService
         self._homeService = dependencies.HomeService
+        self._weaponService = dependencies.WeaponService
         return
     end
 
@@ -175,6 +177,10 @@ function GMCommandService:_handleCommand(player, message)
         end
 
         clearAllTools(player)
+
+        if self._weaponService then
+            self._weaponService:OnPlayerReady(player)
+        end
 
         if self._currencyService then
             self._currencyService:OnPlayerReady(player)

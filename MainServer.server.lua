@@ -54,6 +54,8 @@ local RemoteEventService = requireServerModule("RemoteEventService")
 local PlayerDataService = requireServerModule("PlayerDataService")
 local HomeService = requireServerModule("HomeService")
 local CurrencyService = requireServerModule("CurrencyService")
+local WeaponService = requireServerModule("WeaponService")
+local WeaponKnockbackService = requireServerModule("WeaponKnockbackService")
 local GMCommandService = requireServerModule("GMCommandService")
 local BrainrotService = requireServerModule("BrainrotService")
 local FriendBonusService = requireServerModule("FriendBonusService")
@@ -62,6 +64,10 @@ local QuickTeleportService = requireServerModule("QuickTeleportService")
 
 RemoteEventService:Init()
 PlayerDataService:Init()
+WeaponService:Init({
+    PlayerDataService = PlayerDataService,
+})
+WeaponKnockbackService:Init()
 HomeService:Init()
 CurrencyService:Init({
     PlayerDataService = PlayerDataService,
@@ -79,6 +85,7 @@ GMCommandService:Init({
     BrainrotService = BrainrotService,
     PlayerDataService = PlayerDataService,
     HomeService = HomeService,
+    WeaponService = WeaponService,
 })
 BrainrotService:Init({
     PlayerDataService = PlayerDataService,
@@ -102,6 +109,8 @@ local function onPlayerAdded(player)
 
     PlayerDataService:LoadPlayerData(player)
     PlayerDataService:SetHomeId(player, assignedHome.Name)
+    WeaponService:OnPlayerReady(player)
+    WeaponKnockbackService:OnPlayerReady(player)
     GMCommandService:BindPlayer(player)
     FriendBonusService:OnPlayerReady(player)
     BrainrotService:OnPlayerReady(player, assignedHome)
@@ -128,6 +137,8 @@ end
 local function onPlayerRemoving(player)
     local assignedHome = HomeService:GetAssignedHome(player)
     GMCommandService:UnbindPlayer(player)
+    WeaponKnockbackService:OnPlayerRemoving(player)
+    WeaponService:OnPlayerRemoving(player)
     FriendBonusService:OnPlayerRemoving(player)
     BrainrotService:OnPlayerRemoving(player)
     CurrencyService:OnPlayerRemoving(player)

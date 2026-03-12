@@ -32,6 +32,20 @@ GameConfig.DATASTORE = {
 GameConfig.DATASTORE.ActiveName = RunService:IsStudio()
 	and GameConfig.DATASTORE.StudioName
 	or GameConfig.DATASTORE.LiveName
+GameConfig.WEAPON = {
+	ToolsRootFolderName = "Tools",
+	StarterWeaponFolderName = "StarterWeapon",
+	DefaultWeaponId = "Bat",
+	SlotCount = 1, -- Reserved: currently fixed to one weapon slot
+	ToolIsWeaponAttributeName = "IsWeaponTool",
+	ToolWeaponIdAttributeName = "WeaponId",
+	KnockbackEnabled = true,
+	KnockbackRequireToolEquipped = true,
+	KnockbackActiveWindowSeconds = 0.35,
+	KnockbackHitCooldownSeconds = 0.45,
+	KnockbackHorizontalVelocity = 75,
+	KnockbackVerticalVelocity = 35,
+}
 
 GameConfig.GM = {
 	EnabledOnlyInStudio = true,
@@ -191,6 +205,11 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 		StarterGranted = false,
 		Inventory = {},
 	},
+	WeaponState = {
+		StarterWeaponGranted = false,
+		OwnedWeaponIds = {},
+		EquippedWeaponId = "",
+	},
 	Meta = {
 		CreatedAt = 0,
 		LastLoginAt = 0,
@@ -204,6 +223,7 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 }
 
 return GameConfig
+
 
 
 

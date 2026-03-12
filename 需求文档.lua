@@ -630,3 +630,9 @@ rbxassetid://92295649647469
 1.我们的脑红信息模板ReplicatedStorage - UI - BaseInfo - Title - Quality这个文本，我们在Quality下默认有加的一个UIStroke，我们需要做的是，当一个脑红的品质是Secret的时候，需要把UIStroke的颜色改成纯白，但是其他的都保持默认不变
 2.我们需要补充一些新的渐变效果，具体是Gradients - Animation - Quality - God以及Gradients - Animation - Quality - OG，同时还有Gradients - Animation - Rarity - Lava以及Gradients - Animation - Rarity - Hacker以及Gradients - Animation - Rarity - Lava以及Gradients - Animation - Rarity - Rainbow，注意这些渐变效果也都要每个都单独控制参数
 3.在我们的加金币的动画效果表现时，Cash - CoinAdd出现后会透明度逐渐变成1隐藏，然后在隐藏过程中，明明字体是纯绿，然后描边是黑色，在透明度变化过程中不知道为什么看着字体中间一部分变成了白色，分析下原因
+
+V2.0.2 做一个小修改：
+关于ReplicatedStorage - UI - BaseInfo - Title - Quality里面的Secret这个品质，我们需要改下逻辑，当生成时，需要赋予两个渐变Gradients - Animation - Quality - Secret1和Gradients - Animation - Quality - Secret2，两个渐变同时生效，移除对之前Gradients - Animation - Quality - Secret的引用，两个渐变同时生效并且同参数情况下同时播渐变动画效果
+
+V2.0.3 再次修改Secret渐变
+改成：不要同时给两个渐变，而是把Secret1赋予描边，把Secret2赋予文本，然后其他不变，同时播渐变动效
