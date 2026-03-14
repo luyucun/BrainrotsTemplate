@@ -339,13 +339,15 @@ local function isCharacterNearPart(character, part)
 
 	local localPosition = part.CFrame:PointToObjectSpace(rootPart.Position)
 	local size = part.Size
-	local xLimit = (size.X * 0.5) + 2
-	local zLimit = (size.Z * 0.5) + 2
-	local yLimit = (size.Y * 0.5) + 8
+	local xLimit = (size.X * 0.5) + 1
+	local zLimit = (size.Z * 0.5) + 1
+	local yUpperLimit = (size.Y * 0.5) + 6
+	local yLowerLimit = (size.Y * 0.5) + 3
 
 	return math.abs(localPosition.X) <= xLimit
 		and math.abs(localPosition.Z) <= zLimit
-		and math.abs(localPosition.Y) <= yLimit
+		and localPosition.Y <= yUpperLimit
+		and localPosition.Y >= -yLowerLimit
 end
 
 local function isCharacterTouchingPart(character, part)
@@ -1919,6 +1921,91 @@ local function shouldUseSingleAnchorForAnimation(instance)
 	return hasMotor6D or hasBone
 end
 
+local function disablePlacedDirectInteraction(instance)
+	if not instance then
+		return
+	end
+
+	local nodes = { instance }
+	for _, descendant in ipairs(instance:GetDescendants()) do
+		table.insert(nodes, descendant)
+	end
+
+	for _, node in ipairs(nodes) do
+		if node:IsA("ProximityPrompt") then
+			node.Enabled = false
+		elseif node:IsA("ClickDetector") then
+			node.MaxActivationDistance = 0
+		end
+	end
+end
+
+local function convertPlacedToolCloneToModel(toolClone, preferredModelName)
+	if not (toolClone and toolClone:IsA("Tool")) then
+		return toolClone
+	end
+
+	local model = Instance.new("Model")
+	model.Name = toolClone.Name
+
+	for attributeName, attributeValue in pairs(toolClone:GetAttributes()) do
+		model:SetAttribute(attributeName, attributeValue)
+	end
+
+	for _, child in ipairs(toolClone:GetChildren()) do
+		child.Parent = model
+	end
+
+	local primaryPart = nil
+	if type(preferredModelName) == "string" and preferredModelName ~= "" then
+		local preferredNode = model:FindFirstChild(preferredModelName, true)
+		if preferredNode and preferredNode:IsA("Model") then
+			primaryPart = preferredNode.PrimaryPart or preferredNode:FindFirstChildWhichIsA("BasePart", true)
+		elseif preferredNode and preferredNode:IsA("BasePart") then
+			primaryPart = preferredNode
+		end
+	end
+
+	if not primaryPart then
+		local brainrotModel = model:FindFirstChild("BrainrotModel", true)
+		if brainrotModel and brainrotModel:IsA("Model") then
+			primaryPart = brainrotModel.PrimaryPart or brainrotModel:FindFirstChildWhichIsA("BasePart", true)
+		end
+	end
+
+	if not primaryPart then
+		local humanoidRootPart = model:FindFirstChild("HumanoidRootPart", true)
+		if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+			primaryPart = humanoidRootPart
+		end
+	end
+
+	if not primaryPart then
+		local rootPart = model:FindFirstChild("RootPart", true)
+		if rootPart and rootPart:IsA("BasePart") then
+			primaryPart = rootPart
+		end
+	end
+
+	if not primaryPart then
+		local handle = model:FindFirstChild("Handle", true)
+		if handle and handle:IsA("BasePart") then
+			primaryPart = handle
+		end
+	end
+
+	if not primaryPart then
+		primaryPart = model:FindFirstChildWhichIsA("BasePart", true)
+	end
+
+	if primaryPart then
+		model.PrimaryPart = primaryPart
+	end
+
+	toolClone:Destroy()
+	return model
+end
+
 function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 	local template = self:_getBrainrotModelTemplate(brainrotDefinition.ModelPath)
 	if not template then
@@ -1956,6 +2043,10 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 		for _, descendant in ipairs(placedInstance:GetDescendants()) do
 			if descendant:IsA("BasePart") then
 				table.insert(baseParts, descendant)
+			elseif descendant:IsA("ProximityPrompt") then
+				descendant.Enabled = false
+			elseif descendant:IsA("ClickDetector") then
+				descendant.MaxActivationDistance = 0
 			elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
 				descendant.Disabled = true
 			end
@@ -2008,8 +2099,12 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 		local useSingleAnchor = shouldUseSingleAnchorForAnimation(placedInstance)
 		for _, basePart in ipairs(baseParts) do
 			basePart.CanCollide = false
+			basePart.CanTouch = false
 			basePart.Anchored = not useSingleAnchor or (basePart == anchorPart)
 		end
+
+		-- 放在场景里的脑红必须是纯展示实例，不能保留 Tool 类，否则玩家靠近 Handle 会触发 Roblox 默认拾取。
+		placedInstance = convertPlacedToolCloneToModel(placedInstance, preferredModelName)
 	elseif placedInstance:IsA("Model") then
 		local primaryPart = placedInstance.PrimaryPart or placedInstance:FindFirstChildWhichIsA("BasePart", true)
 		if not primaryPart then
@@ -2034,7 +2129,12 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 		for _, descendant in ipairs(placedInstance:GetDescendants()) do
 			if descendant:IsA("BasePart") then
 				descendant.CanCollide = false
+				descendant.CanTouch = false
 				descendant.Anchored = not useSingleAnchor or (descendant == primaryPart)
+			elseif descendant:IsA("ProximityPrompt") then
+				descendant.Enabled = false
+			elseif descendant:IsA("ClickDetector") then
+				descendant.MaxActivationDistance = 0
 			elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
 				descendant.Disabled = true
 			end
@@ -2054,6 +2154,7 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 	elseif placedInstance:IsA("BasePart") then
 		placedInstance.Anchored = true
 		placedInstance.CanCollide = false
+		placedInstance.CanTouch = false
 		local partYawCFrame = makeYawOnlyCFrame(placedInstance.CFrame, targetPosition, targetYawCFrame.LookVector)
 		if partYawCFrame then
 			placedInstance.CFrame = partYawCFrame
@@ -2064,7 +2165,11 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 			end
 		end
 		for _, descendant in ipairs(placedInstance:GetDescendants()) do
-			if descendant:IsA("Script") or descendant:IsA("LocalScript") then
+			if descendant:IsA("ProximityPrompt") then
+				descendant.Enabled = false
+			elseif descendant:IsA("ClickDetector") then
+				descendant.MaxActivationDistance = 0
+			elseif descendant:IsA("Script") or descendant:IsA("LocalScript") then
 				descendant.Disabled = true
 			end
 		end
@@ -2073,6 +2178,8 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition)
 		warn(string.format("[BrainrotService] 不支持放置的脑红实例类型: %s", placedInstance.ClassName))
 		return nil
 	end
+
+	disablePlacedDirectInteraction(placedInstance)
 
 	placedInstance.Name = string.format("PlacedBrainrot_%d", brainrotDefinition.Id)
 	placedInstance.Parent = runtimeFolder
@@ -2400,7 +2507,7 @@ function BrainrotService:_playClaimBounceAnimation(player, positionKey)
 	local downDuration = math.max(0.03, tonumber(GameConfig.BRAINROT.ClaimBrainrotBounceDownDuration) or 0.18)
 
 	local upTween = TweenService:Create(pivotValue, TweenInfo.new(upDuration, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Value = basePivot * CFrame.new(0, bounceOffset, 0),
+		Value = setCFramePosition(basePivot, basePivot.Position + Vector3.new(0, bounceOffset, 0)),
 	})
 	state.CurrentTween = upTween
 	upTween:Play()
@@ -2623,21 +2730,34 @@ function BrainrotService:_handleClaimTouchEnded(claimState, hitPart)
 	local unlockGeneration = (tonumber(claimState.UnlockGeneration) or 0) + 1
 	claimState.UnlockGeneration = unlockGeneration
 
-	local waitDuration = 0.1
+	local checkInterval = 0.03
 
 	task.spawn(function()
-		task.wait(waitDuration)
+		while true do
+			if (tonumber(claimState.UnlockGeneration) or 0) ~= unlockGeneration then
+				return
+			end
 
-		if (tonumber(claimState.UnlockGeneration) or 0) ~= unlockGeneration then
-			return
+			if (tonumber(claimState.TouchingCount) or 0) > 0 then
+				return
+			end
+
+			local triggerPart = claimState.TriggerPart
+			local character = claimState.Character
+			if not (triggerPart and triggerPart.Parent and character and character.Parent) then
+				claimState.IsTriggeredWhileOccupied = false
+				claimState.LastTriggerClock = 0
+				return
+			end
+
+			if not isCharacterOccupyingPart(character, triggerPart) then
+				claimState.IsTriggeredWhileOccupied = false
+				claimState.LastTriggerClock = 0
+				return
+			end
+
+			task.wait(checkInterval)
 		end
-
-		if (tonumber(claimState.TouchingCount) or 0) > 0 then
-			return
-		end
-
-		claimState.IsTriggeredWhileOccupied = false
-		claimState.LastTriggerClock = 0
 	end)
 end
 
