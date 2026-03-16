@@ -54,6 +54,11 @@ local SocialController = requireControllerModule("SocialController")
 local QuickTeleportController = requireControllerModule("QuickTeleportController")
 local MainButtonFxController = requireControllerModule("MainButtonFxController")
 local ClaimFeedbackController = requireControllerModule("ClaimFeedbackController")
+local ModalController = requireControllerModule("ModalController")
+local RebirthController = requireControllerModule("RebirthController")
+local IndexController = requireControllerModule("IndexController")
+local GlobalLeaderboardController = requireControllerModule("GlobalLeaderboardController")
+local SpecialEventController = requireControllerModule("SpecialEventController")
 local RemoteNames = requireSharedModule("RemoteNames")
 
 local coinDisplayController = CoinDisplayController.new()
@@ -73,6 +78,19 @@ mainButtonFxController:Start()
 
 local claimFeedbackController = ClaimFeedbackController.new()
 claimFeedbackController:Start()
+
+local modalController = ModalController.new()
+local indexController = IndexController.new(modalController)
+indexController:Start()
+
+local rebirthController = RebirthController.new(modalController)
+rebirthController:Start()
+
+local globalLeaderboardController = GlobalLeaderboardController.new()
+globalLeaderboardController:Start()
+
+local specialEventController = SpecialEventController.new()
+specialEventController:Start()
 
 local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
 local brainrotEvents = eventsRoot:FindFirstChild(RemoteNames.BrainrotEventsFolder)

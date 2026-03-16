@@ -1,157 +1,142 @@
 --[[
 =====================================================
-游戏整体架构设计文档（V1.8.1）
+游戏整体架构设计文档（V2.4.1）
 =====================================================
 
 项目名称: BrainrotsTemplate
-当前版本: V1.8.1
-文档更新时间: 2026-03-10
+当前版本: V2.4.1
+文档更新时间: 2026-03-16
 
 一、核心分层
 1. Shared 配置层（ReplicatedStorage/Shared）
-- GameConfig: 全局配置（家园、DataStore、脑红、社交、好友产速加成、快捷传送、脑红信息牌、榜单字段、Claim 动效参数）
-- BrainrotConfig: 脑红静态表（12 条测试脑红）
-- BrainrotDisplayConfig: 品质/稀有度显示名与渐变路径映射
-- RemoteNames / FormatUtil: 事件名与格式化工具
+- GameConfig: 全局配置，集中管理家园、DataStore、脑红、武器、Rebirth、全局排行榜、特殊事件等参数。
+- BrainrotConfig: 脑红静态配置表，来源于 Excel 脑红表同步结果。
+- RebirthConfig: Rebirth 静态配置表。
+- BrainrotDisplayConfig: 脑红品质/稀有度展示名与渐变路径映射。
+- RemoteNames / FormatUtil: RemoteEvent 名称与格式化工具。
 
 2. 服务层（ServerScriptService/Services）
-- PlayerDataService: 读写玩家数据、自动保存、离线结算基础时间戳
-- HomeService: 家园分配/回收/传送
-- CurrencyService: 金币增减与同步、单服内置榜单（Cash）
-- BrainrotService: 脑红背包、放置、产金、领取、状态同步、头顶信息牌、总产速计算、V1.8.1 Claim 反馈表现
-- FriendBonusService: 同服好友关系计算与加成同步
-- QuickTeleportService: 处理 Main/Top/Home/Shop/Sell 快捷传送请求
-- GMCommandService: GM 命令（/addcoins /addbrainrot /clear）
-- RemoteEventService: 统一创建和获取 RemoteEvent
-- SocialService: 家园信息板展示、点赞交互与点赞状态同步
+- PlayerDataService: 玩家数据读写、默认值合并、会话缓存、自动保存、排行榜快照持久化。
+- HomeService: 家园分配、回收、传送。
+- CurrencyService: 金币增减、同步，以及默认玩家列表 Cash 展示。
+- BrainrotService: 脑红背包、装备、放置、产金、领取、世界模型运行态、Index 解锁历史、Claim UI 刷新。
+- RebirthService: Rebirth 条件校验、执行、状态同步、产速倍率更新。
+- FriendBonusService: 同服好友数量统计与好友产速加成同步。
+- QuickTeleportService: Home / Shop / Sell 快捷传送请求。
+- GMCommandService: GM 命令入口，当前支持 /addcoins /addbrainrot /clear /event。
+- RemoteEventService: 统一创建和获取 RemoteEvent。
+- SocialService: 家园信息板、点赞交互、点赞提示与状态同步。
+- WeaponService: 武器拥有/装备状态管理，当前固定 1 个武器槽位。
+- WeaponKnockbackService: 挥击命中后的击飞逻辑，不扣血、不击杀。
+- GlobalLeaderboardService: 全局总产速榜/总时长榜刷新、榜单 UI 填充、玩家个人卡片属性同步。
+- SpecialEventService: V2.4.1 特殊事件调度、跨服统一时间片选取、客户端状态同步、GM 手动触发。
 
 3. 客户端层（StarterPlayerScripts）
-- MainClient + CoinDisplayController: 金币数字滚动、抖动、CoinAdd 动效
-- SocialController: LikeTips 弹窗动画、点赞状态同步、Information Prompt 本地可见性过滤
-- FriendBonusController: Friend Bonus 文本实时更新
-- QuickTeleportController: 绑定 Main/Top/Home/Shop/Sell 按钮并发起传送请求
-- ClaimFeedbackController (V1.8.1): 监听 ClaimCashFeedback，仅本地播放 ADDCash 音效
+- MainClient: 客户端启动入口与首次请求同步。
+- CoinDisplayController: 金币滚动、抖动、浮字反馈。
+- SocialController: 点赞提示、点赞状态过滤、Prompt 本地可见性处理。
+- FriendBonusController: Friend Bonus 文本更新。
+- QuickTeleportController: 顶部 Home / Shop / Sell 快捷按钮。
+- ClaimFeedbackController: 仅本地播放领取音效与金币飞散回收特效。
+- MainButtonFxController: 主界面按钮 Hover / Press 动效。
+- ModalController: 通用弹窗开关与 Blur 动效。
+- IndexController: 图鉴界面、分类页签、条目渲染、渐变展示、进度统计。
+- RebirthController: Rebirth 面板、进度、请求与反馈表现。
+- GlobalLeaderboardController: 本地玩家卡片刷新，读取玩家 Attribute 更新两个排行榜下方个人信息区域。
+- SpecialEventController: 监听特殊事件同步，在本地给自己角色挂事件模板，并本地复制 Lighting 事件天空盒子节点。
 
-=====================================================
-二、V1.8.1 变更点
-=====================================================
+二、近阶段功能要点
+1. V2.1 / V2.1.1
+- Index 界面复用 BrainrotStateSync 的解锁历史数据。
+- Claim 显示路径统一为 ClaimX/Touch/.../Money(Frame)，不再使用旧 BillboardGui 路径。
 
-1. Claim 领取反馈表现（新增）
-- Claim/Touch 按压: Claim 本体不动，仅 Touch 下压后回弹，使用缓动曲线。
-- 脑红弹跳: 对应 Position 上已放置脑红上弹后平滑回落（去除末端弹性）。
-- 粒子特效: 从 ReplicatedStorage/Effect/Claim 目录分别复制 Glow/Smoke/Money/Stars，并挂载到 Claim/Touch。
-  - Glow / Smoke: 每次触碰各 Emit(1) 一次，等待粒子生命周期结束后销毁。
-  - Money / Stars: 正常播放，固定 1.5 秒后移除。
-  - 快速重复触发: 新触发前先清理旧粒子节点，再重建新一轮特效。
+2. V2.2
+- Rebirth 等级为永久玩家数据。
+- Rebirth 成功后清空当前金币与待领取金币，并重新应用 Rebirth 产速倍率。
 
-2. Claim 触碰触发规则（调整）
-- 仅触碰 Claim/Touch 的 Touch 节点才会触发领取流程。
-- 玩家持续站在 Claim 不动: 最多触发一次。
-- 玩家在 Claim 上移动: 不会再次触发领取流程。
-- 玩家离开 Claim 后再次触碰: 可再次触发（受 ClaimTouchDebounceSeconds 限制）。
-- 修复连续多次触碰时脑红弹跳高度累加: 每次弹跳前先恢复到基准位。
+3. V2.3
+- 新增全局总产速排行榜与全局总游玩时长排行榜。
+- 公共 Top50 榜单由服务端直接驱动场景内 UI。
+- 玩家自己的底部个人卡片由客户端读取玩家 Attribute 驱动。
+- TotalPlaySeconds 为永久数据，/clear 不清空该字段。
 
-3. Claim 音效下发（新增）
-- 新增 RemoteEvent: ClaimCashFeedback (S->C)。
-- 服务端仅对触发领取者 FireClient，客户端本地播放 SoundService/Audio/ADDCash。
-- 若场景缺少 ADDCash，客户端回退到 `rbxassetid://139922061047157`。
+4. V2.4 特殊事件
+- 每 30 分钟触发一次特殊事件，按 UTC 整点和 30 分对齐，与服务器开启时间无关。
+- 事件从 GameConfig.SPECIAL_EVENT.Entries 中按权重选择。
+- 当前调度逻辑要求“本次事件不能与上次调度事件重复”。
+- 当前事件模板位于 ReplicatedStorage/Event/EventHacker 与 EventLava。
+- GM 可通过 /event <事件Id> 在当前服务器手动触发事件。
+- 手动触发时：若已存在同 id 事件则先移除旧同 id 事件；若 id 不同则允许并存。
 
-4. V1.7 能力延续
-- 玩家总产速公式: 最终产速 = 基础总产速 * (1 + 加成1 + 加成2 + ...)
-- BrainrotStateSync 扩展字段:
-  - totalProductionBaseSpeed
-  - totalProductionMultiplier
-  - totalProductionSpeed
-- Tab 榜单仅显示 Cash（K/M/B），不显示 Rank。
+5. V2.4.1 特殊事件补充
+- 特殊事件调度仍由服务端负责，但角色挂件与天空盒表现改为客户端本地执行。
+- 服务端通过 RemoteEvent 同步当前活跃事件列表；客户端只对本地玩家自己生效。
+- 角色表现: 客户端从 ReplicatedStorage/Event 下复制对应模板，挂到本地角色上；重生后自动重新挂载。
+- 天空盒表现: 客户端按配置中的 LightingPath，从 Lighting/Hacker 或 Lighting/Lava 复制子节点到 Lighting 直接子级；事件结束后本地移除。
+- 因为客户端表现需要可靠同步，V2.4.1 新增了 SpecialEventStateSync / RequestSpecialEventStateSync 两个 RemoteEvent。
 
-=====================================================
 三、关键数据结构
-=====================================================
-
-PlayerData
+1. 持久化 PlayerData
 - Currency.Coins
-- HomeState.PlacedBrainrots[positionKey]
-  - InstanceId
-  - BrainrotId
-  - PlacedAt
-- HomeState.ProductionState[positionKey]
-  - CurrentGold
-  - OfflineGold
-  - FriendBonusRemainder
-- BrainrotData
-  - Inventory[{ InstanceId, BrainrotId }]
-  - EquippedInstanceId
-  - NextInstanceId
-  - StarterGranted
-- SocialState
-  - LikesReceived: number
-  - LikedPlayerUserIds: map<string, boolean>
-- Meta
-  - CreatedAt
-  - LastLoginAt
-  - LastLogoutAt
-  - LastSaveAt
+- Growth.PowerLevel
+- Growth.RebirthLevel
+- HomeState.HomeId
+- HomeState.PlacedBrainrots[positionKey] -> InstanceId / BrainrotId / PlacedAt
+- HomeState.ProductionState[positionKey] -> CurrentGold / OfflineGold / FriendBonusRemainder
+- BrainrotData.Inventory[{ InstanceId, BrainrotId }]
+- BrainrotData.EquippedInstanceId / NextInstanceId / StarterGranted / UnlockedBrainrotIds
+- WeaponState.StarterWeaponGranted / OwnedWeaponIds / EquippedWeaponId
+- LeaderboardState.TotalPlaySeconds / ProductionSpeedSnapshot
+- SocialState.LikesReceived / LikedPlayerUserIds
+- Meta.CreatedAt / LastLoginAt / LastLogoutAt / LastSaveAt
 
-服务端运行态（不入档）
+2. 运行态数据（不入档）
 - BrainrotService._runtimePlacedByUserId
 - BrainrotService._runtimeIdleTracksByUserId
-- BrainrotService._claimTouchDebounceByUserId（V1.8.1: 触碰状态与二次触发防抖）
-- BrainrotService._claimEffectByUserId（V1.8.1: 当前 Claim 粒子节点）
-- BrainrotService._claimBounceStateByUserId（V1.8.1: 脑红弹跳动画状态）
-- BrainrotService._missingDisplayPathWarned
+- BrainrotService._claimTouchDebounceByUserId
+- BrainrotService._claimEffectByUserId
+- BrainrotService._claimBounceStateByUserId
 - FriendBonusService._stateByUserId
-- SocialService._homeInfoByName
-- PlayerDataService._allowDataStoreSaveByUserId
+- RebirthService._lastRequestClockByUserId
+- GlobalLeaderboardService._memoryScoresByBoardKey / _cachedEntriesByBoardKey / _userInfoByUserId
 - QuickTeleportService._lastRequestClockByUserId
+- SpecialEventService._activeEventsByRuntimeKey / _scheduleState
 
-玩家 Attribute
-- CashRaw
-- TotalProductionSpeedBase
-- TotalProductionBonusRate
-- TotalProductionMultiplier
-- TotalProductionSpeed
-
-=====================================================
-四、初始化顺序（MainServer）
-=====================================================
+四、服务端初始化顺序（MainServer）
 1. RemoteEventService:Init()
 2. PlayerDataService:Init()
-3. HomeService:Init()
-4. CurrencyService:Init(...)
-5. FriendBonusService:Init(...)
-6. QuickTeleportService:Init(...)
-7. GMCommandService:Init(...)
-8. BrainrotService:Init(...)
-9. SocialService:Init(...)
-10. PlayerAdded: 家园分配 -> 读档 -> 好友加成初始化 -> 脑红恢复/挂载信息牌/计算总产速 -> 社交状态同步 -> 金币与榜单同步
-11. PlayerRemoving: 解绑 -> 好友加成重算 -> 脑红运行态清理 -> 清理 Claim 反馈运行态 -> 社交家园面板清空 -> 回收家园 -> 保存
+3. WeaponService:Init(...)
+4. WeaponKnockbackService:Init()
+5. HomeService:Init()
+6. CurrencyService:Init(...)
+7. FriendBonusService:Init(...)
+8. QuickTeleportService:Init(...)
+9. BrainrotService:Init(...)
+10. RebirthService:Init(...)
+11. GMCommandService:Init(...)
+12. SocialService:Init(...)
+13. GlobalLeaderboardService:Init(...)
+14. SpecialEventService:Init(...)
+15. PlayerAdded 流程: 分配家园 -> 读档 -> 恢复武器 -> 初始化好友加成 -> 初始化 Rebirth 属性 -> 恢复脑红/离线收益/图鉴历史 -> 社交同步 -> 同步当前活跃特殊事件状态 -> 金币同步 -> 排行榜个人卡刷新
+16. PlayerRemoving 流程: 解绑 -> 武器清理 -> 排行榜快照刷新 -> 好友加成重算 -> 脑红运行态清理 -> Rebirth 清理 -> 社交清理 -> 回收家园 -> 保存数据
+17. BindToClose: 先刷新全局排行榜快照，再保存所有玩家数据
 
-=====================================================
 五、维护约束
-=====================================================
-1. 新增/变更网络事件时，必须同步更新:
+1. 未来若新增或修改 RemoteEvent，必须同步更新：
 - RemoteEvent当前列表.lua
+- 架构设计文档.lua
 - RemoteNames.lua
 - RemoteEventService.lua
 
-2. 客户端请求必须服务端校验。
-3. 与金币产出相关状态统一在 HomeState.ProductionState 维护。
-4. 点赞数据属于永久玩家数据，严禁在非 `/clear` 流程下重置。
-5. 好友加成只影响在线实时产出，不影响离线收益结算。
-6. 快捷传送目标坐标只能由服务端解析，客户端不可直传坐标。
-7. 头顶信息牌仅在运行态场景模型挂载，不在背包 Tool 上挂载。
-8. 榜单不额外显示 Rank 列，Cash 使用 K/M/B 大数值显示。
-9. Claim 音效必须保持“仅触发者本地可听见”。
+2. 所有客户端 -> 服务端请求都必须继续做服务端校验。
+3. 所有产出相关状态统一维护在 HomeState.ProductionState。
+4. 点赞、图鉴解锁历史、Rebirth 等级、总游玩时长均属于永久数据。
+5. /clear 不得清空 TotalPlaySeconds。
+6. Claim 音效继续保持“仅触发者自己本地可听见”。
+7. 公共排行榜行内容由服务端驱动，底部个人卡片由客户端驱动。
+8. 当前特殊事件系统采用“服务端调度 + 客户端本地表现”；若未来需要倒计时 UI、全服公告或跨玩家可见表现，再继续扩展同步协议。
 
 =====================================================
 文档结束
 =====================================================
-
-====================================================
-六、V2.1 武器系统补充（2026-03-12）
-====================================================
-1. 新增 WeaponService：负责玩家武器拥有/装备状态维护；当前固定 1 个武器槽位。
-2. 新增 WeaponKnockbackService：玩家挥击后在短窗口内命中其他玩家触发击飞。
-3. 击飞规则：仅击飞，不扣血，不击杀；为纯服务端逻辑，不新增 RemoteEvent。
-4. MainServer 接入：PlayerAdded 绑定武器与击飞监听，PlayerRemoving 清理监听。
 ]]

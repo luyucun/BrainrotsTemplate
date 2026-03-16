@@ -636,3 +636,167 @@ V2.0.2 做一个小修改：
 
 V2.0.3 再次修改Secret渐变
 改成：不要同时给两个渐变，而是把Secret1赋予描边，把Secret2赋予文本，然后其他不变，同时播渐变动效
+
+
+
+V2.1 图鉴系统（Index系统）
+概述：玩家可以在此处预览所有已经解锁的脑红，并随着脑红收集完成获得一定的收益
+
+详细规则：
+功能入口相关的规则：
+1.玩家点击StarterGui - Main - Left - Index - TextButton这个按钮，打开Index界面（把StarterGui - Main - Index的Visible改成True）
+2.玩家点击StarterGui - Main - Index - Title - CloseButton按钮，关闭Index界面（把StarterGui - Main - Index的Visible改成False）
+这里我们需要做一个补充，关于我们做弹框打开和弹框关闭时，我们需要做一个对应的表现，在这个功能中我们先实现出来，然后后续开发的新的弹框，打开时都要有同样的表现，这个你得记住，具体打开弹框时的表现是：
+1.打开弹框时，需要一个打开动效，弹框丝滑放大显示出来，而不是凭空显示，应该是有个打开的过程，最好有个缓动曲线，比如先放大然后缩小到正常大小，像果冻一样Q弹
+2.弹框打开时，需要把Lighting - Blur的显示出来（enable改成True），同时打开时，把StarterGui - Main - Left以及StarterGui - Main - Top以及StarterGui - Main - Cash以及StarterGui - Main - TopRightGui这些Frame的Visible都改成False，也就是都隐藏起来
+3.弹框关闭时，同样是先放大再缩小到消失，也是一个Q弹的缓动效果，关闭后把之前隐藏的那些Frame显示出来，然后把Blur也给关掉
+4.注意我再补充一下：这个功能我们先做出来，后续每个新功能开发好涉及到弹框显示消失的，都需要这样有这个通用的显示隐藏和Blur效果
+
+接下来是关于图鉴功能的系统规则：
+1.在之前的规则中，我们就对我们的脑红进行过分类：品质以及稀有度，每个脑红都有其品质与稀有度划分
+2.在Index图鉴中，我们的规则是：有多个页签，页签以稀有度为划分依据，同一个稀有度的脑红全部显示在一个页签下的列表中，然后按照品质从低到高依次显示即可，比如Normal稀有度页签下，显示的都是Normal稀有度的脑红，然后Gold稀有度页签下都是Gold稀有度的脑红
+3.同稀有度下，按表中脑红的顺序显示即可
+4.每个脑红都有一个对应的解锁状态：玩家是否获得过这个脑红，如果获得过（不论从什么渠道获得的，比如后面要做的别人送的礼物还是直接购买还是系统奖励等都算，只要获得过就行），就视为解锁了这个脑红，如果从未获得过就是未解锁状态
+
+接下来是关于脑红图鉴显示的客户端规则：
+1.StarterGui - Main - Index - TabList是页签列表，用于展示我们有哪些稀有度页签，具体逻辑是：
+    1.1.TabList - ScrollingFrame是用来承载页签列表按钮的
+    1.2TabList - ScrollingFrame - Template是页签按钮模板，默认隐藏，当打开页面时，需要去根据游戏当前开放的稀有度表，来生成对应的稀有度页签，去复制Template并改成Visible即可
+    1.3Template - Name是一个Textlabel，用于显示稀有度名字
+    1.4Template - Bg是一个Imagelabel，当按钮生成时，需要去按之前的类似头顶Info一样的逻辑，去StarterGui - Gradients - Animation - Rarity下复制同名稀有度的渐变，挂到Bg下，同时把Bg下之前就存在的叫Common的渐变删除
+    1.5按钮生成后，点击对应的稀有度按钮，来打开对应的稀有度的脑红图鉴界面
+    1.6注意这里的页签按钮点击时，也要有按下的效果，和Main - Top里那几个按钮一样的效果
+    1.7再补充一个需求：鼠标移动到StarterGui - Main - Index - Title - CloseButton，也要把CloseButton放大，然后给CloseButton做旋转，类似之前Main - Left下的Index按钮一样的效果
+2.关于脑红信息的显示：
+    2.1Main - Index - Indexinfo - ScrollingFrame - Template是脑红信息显示的模板，默认的Visible属性是false，生成脑红信息时，去复制一份出来改成显示，并修改对应的信息然后生成对应的脑红信息
+    2.2Template - Icon是imagelabel，用于显示脑红的图标，注意：这里如果脑红已经解锁了，就正常显示，如果脑红没有解锁，这个图标要显示成黑色剪影，只能看到轮廓那种
+    2.3Template - Name用于显示脑红的名字，这是个Texlabel
+    2.4Template - Quality是Textlabel，用于显示这个品质的品质名字，注意这里生成品质名字时，需要去按我们之前显示在脑红头顶显示品质名字一样的逻辑，去对应路径下复制对应的渐变挂给Quality，并且还要有渐变动效
+    2.5Template - Bg是脑红的背景板，生成脑红信息时，也是去复制对应的品质的渐变挂给Bg，同时需要把Bg下原本自带的叫Common的渐变给删掉，注意，这里暂时我们先不做动效，只复制渐变过来即可
+
+关于脑红的解锁收集进度：
+1.我们需要给当前我们有多少个脑红做一个总数汇总，比如Normal一共10个，Gold10个，Diamond10个，那么我们总共的脑红数量就是30，然后Normal里解锁了3个，Gold里解锁了两个，那么总共的当前的解锁总数就是3
+2.Main - Index - Title - Discovered是一个TExtlabel，用于显示玩家当前的解锁进度，内容固定是：xx/yy Discovered     ，其中xx就是当前解锁的数量，yy是总数，比如按上面的说法就是3/30 Discovered
+3.Main - Index - Title - Progress是一个Textlabel，用于显示玩家的当前的解锁进度，和上面第二条类似，不过这里显示百分比，最多显示为整数并且始终向上取整，比如0.5%就是1%，3.9%就是4%，这里内容固定是：xx%Complete
+
+我们的数据表在："D:\RobloxGame\BrainrotsTemplate\BrainrotsTemplate\数据表基础.xlsx"这个表中，其中“脑红基础”这个页签下就放着目前的所有的脑红的配置，你可以自主读取表
+
+需求文档V2.1.1  修改部分细节
+我们需要对家里的金币的显示逻辑做个修改：
+1.以前我们的逻辑是，以Home01下的CLaim1举例，以前是在Claim1上生成一个Billboard用于显示金币数值以及离线金币数值，现在我们不再用这套来显示，改成其他方式
+2.我们的新的逻辑是：Claim1 - Touch - Money是一个Frame，在这个编号对应的Platform上没有放置脑红之前，这个Frame不显示（Money的Visible=false），如果有脑红放置，才显示出来
+3.Money - CurrentGold是当前已经积累的待领取的金币数值，格式固定是$xxx，Money - CurrentGold是离线产出的金币，如果未领取Money - CurrentGold的visible就是true，领取后就是false，格式固定是：IdleEarnings $xxxx
+
+需求文档V2.2 重生系统
+概述：玩家可以通过重生，来提升自己的基础的金币产出速度，重生时有要求，符合要求才能重生
+
+详细规则：
+重生要求：
+1.目前我们设定的重生要求是玩家当前拥有的金币数值，比如要求有1000金币，那么玩家重生时必须要拥有大于1000金币才可重生
+2.这个重生要求目前就先只设定金币数值，后续可能会拓展或者更改其他要求
+
+重生结果1：
+1.玩家会获得金币产速提升，比如第一次重生，玩家获得0.5倍产速提升，比如原来每秒产出1，现在就变成1.5
+2.不同重生等级的产速加成是替换制，比如1级提升0.5，2级提升至1，3级提升至1.5，那么玩家基础产速是1的情况下，完成3次重生后，实际的产速是1*（1+1.5）=1*2.5=2.5
+3.我们在之前的产速公式中曾经定义过，具体需求是这样的：
+
+“1.我们在这里定义好我们每个脑红的产速计算公式：最终产速=基础产速*（1+加成1+加成2+加成x...），比如一个好友加10%，然后我们的后面系统中出了某个特权+50%，另一个药水+20%，那么总产速就是基础产速*（1+0.1+0.5+0.2）=基础产速*1.8
+2.最终的产速就是所有的摆出来的脑红的产速加和就是总产速”
+
+4.我们的重生带来的产速加成比例也是一样的规则，一起加到括号内，算一个新的加成维度，比如药水+0.2，重生+1.5，VIP+0.8，那么最终产速就是1*（1+0.2+1.5+0.8）
+
+重生结果2：清零玩家当前的金币
+1.重生完成后，将玩家当前的金币数据全部清零，包括自己当前已经有的金币和家园中放置的脑红已经产出的未领取的金币全部清零
+2.重生后脑红再产出金币就要按新的产速加成比例来实现了
+
+重生相关客户端规则：
+1.玩家点击StarterGui - Main - Left - Rebirth - TextButton按钮，来打开重生界面（把StarterGui - Main - Rebirth的visible属性改成True）
+2.玩家点击StarterGui - Main - Rebirth - Title - CloseButton按钮，关闭重生界面（把StarterGui - Main - Rebirth的visible属性改成false）
+3.注意打开关闭弹框的时候，要有我们之前已经做好的关闭ui/打开关闭动效/打开Blur的逻辑，这些都是通用表现
+4.鼠标移动到StarterGui - Main - Rebirth - Title - CloseButton时，要给CloseButton做放大旋转，点下去时要有按下的效果反馈。这些之前在做Index界面时都做过，都一样的效果
+5.StarterGui - Main - Left - Rebirth - Time是一个Textlabel，用于显示玩家当前的重生次数，格式固定是[x]，x就是重生次数数值，随着玩家的重生次数更新这个要实时变化
+6.玩家重生时，需要弹出系统提示，也就是把StarterGui - Main - RebirthTips显示出来，注意显示出来的时候要有弹出动画，具体的效果要和玩家点赞家园时的系统提示效果一致
+7.玩家点击StarterGui - Main - Rebirth - Rebirthinfo - RebirthBtn按钮，可以触发重生，如果玩家重生条件不满足，则需要播放音效rbxassetid://118029437877580，路径是SoundService - Audio - Wrong
+8.如果条件满足，则弹出提示，然后更新重生界面信息，更新成重生之后再次重生所要求的内容
+9.StarterGui - Main - Rebirth - Rebirthinfo - ProgressBg是当前重生要求的进度条，具体逻辑是：
+    9.1Rebirthinfo - ProgressBg - Progress是进度条，Progress的Size的Scale值代表进度，比如值是0就代表进度是0，值是0.5代表当前进度是50%，1就代表进度百分百，进度最多到100%
+    9.2Rebirthinfo - ProgressBg - Num是具体的金币数值，格式是x/y，x是当前拥有的金币，y是需要的金币，数字格式固定都是$xxxx，这里不用大数值，就用原本的数值显示，但是也要有每3位一个逗号的显示逻辑
+10.如果达到了最高的重生次数，那么重生成功后，就始终显示最高次数的重生要求就行了，然后隐藏重生按钮即可
+
+我们的具体的重生的表的初始测试配置是："D:\RobloxGame\BrainrotsTemplate\BrainrotsTemplate\数据表基础.xlsx"，这个表里重生基础配置这个页签，请用这个表里的内容转换为我们的数据配置
+
+
+需求文档V2.3 全局排行榜
+
+概述：我们需要做一套全局排行榜，注意是全局的，所有服务器通用的总排行，不是单服务器内的排行榜
+
+排行维度：
+1.总游戏时长
+2.当前金币总产速
+
+总游戏时长：
+1.是一个永久的玩家的数据，玩家每次进来后都会叠加一些时长，是永久叠加的，任何情况下这个数据都不会被清除，代表在玩家在这个游戏内的总游戏时长
+
+总金币产速：
+1.玩家当前的总的金币产出速度，是计算加成后的总的金币产速，比如3个脑红，各自的速度加成后就是总的金币产出速度
+
+注意：以上排行榜，需要每2分钟更新一轮（开发系统时可以评估这个时长是否太短或者太长可以与我沟通调整这个时间频率）
+
+客户端规则：
+1.在我们的游戏场景内，Workspace - Leaderboard01是一个模型，用来承载总产出速度的排行榜，Workspace - Leaderboard02也是一个模型，用来承载玩家的总游戏时长排行榜
+2.我们以Leaderboard01举例：
+    2.1Leaderboard01 - Main - SurfaceGui - Frame - Player - Avatar用于显示玩家自己的头像
+    2.2Leaderboard01 - Main - SurfaceGui - Frame - Player - Name用于显示玩家自己的名字
+    2.3Leaderboard01 - Main - SurfaceGui - Frame - Player - Num用于显示玩家的这个排行榜的数值，也就是总产出速度，格式固定时：$xx/S,注意这里要用我们游戏通用的大数值格式
+    2.4Leaderboard01 - Main - SurfaceGui - Frame - Player - Rank用于显示玩家的排名信息，如果玩家的排名在50名之外，那么固定这里显示为50+，如果在50名以内，则显示具体名次
+    2.5Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - Rank01 - Avatar用于显示排行榜第一名的头像
+    2.6Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - Rank01 - Name用于显示排行榜第一名的名字
+    2.7Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - Rank01 - Num，用于显示产出速度
+    2.8Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - Rank02和Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - Rank03下面的结构和01时一样的，分别用于显示第二名和第三名的信息
+    2.9在第四名之后的玩家的信息，显示时，都去复制Leaderboard01 - Main - SurfaceGui - Frame - ScrollingFrame - RankTemplate，这个结构和Rank01下面结构也是一样的，但是RankTemplate的默认visible是false，复制出来时需要改成true，然后生成对应的等级信息，同时RankTemplate - Rank用于显示具体的排名名次
+
+3.注意：排行榜最多只显示前50名的信息，超出50名之外的玩家就不显示了
+
+补充一点，关于总游戏时长的信息显示，固定为：xx:yy:zz,xx是天，yy是小时，zz是分钟，比如以下：
+一共玩了305分钟，则显示00:05:05,如果完了15天14小时，则显示为：15:14：00
+
+需求文档V2.4：特殊事件
+概述：我们在游戏中会设定一些基础的游戏事件，不定时发生的，目前这个版本我们先只做一个事件
+
+详细规则：
+1.我们在游戏中设定每30分钟，会从我们的事件库中生成一个特殊事件，所有服务器公用一个倒计时
+2.这个倒计时就是每个UTC的整点和30分，就触发一次事件，跟服务器什么时候开起来的无关
+
+我们做了一个事件表（临时配置，先用来实现功能）：
+特殊事件Id	事件名	发生权重	持续时间（秒）	ReplicatedStorage中的名字
+1001	骇客事件	100	300	EventHacker
+1002	熔岩事件	100	300	EventLava
+
+
+1.每个事件都有一个特殊id
+2.每次事件发生时，都需要从事件表中根据权重，随机一个事件出现
+3.要求本次发生的事件和上次发生的事件不能重复
+
+事件的表现：
+1.骇客事件：
+    1.1去ReplicatedStorage - Event下复制EventHacker，挂载给玩家，并始终绑定在玩家身上，链接好即可，注意复制的时候要把EventHacker下的所有子节点全部复制过来
+2.熔岩事件：
+    1.1去ReplicatedStorage - Event下复制EventLava，挂载给玩家，也是链接好，然后复制所有的子节点
+
+注意：事件期间只要玩家在服务器内，就要有这个表现，事件结束后把复制出来的事件再从玩家身上移除
+
+同时Gm中需要增加命令：/event 1001  按这个格式填事件id，即可触发一次事件，当新的事件触发时，要把已经存在的老同id事件移除掉，如果id不同则不需要移除
+
+需求文档V2.4.1 对事件功能的补充：
+1.注意我们事件的这些逻辑都是玩家自己客户端的，比如加EventHacker这种，都是玩家客户端自己的，不要做成整个服务器逻辑
+2.我们再补充一个功能：在事件触发的时候，需要同步对天空盒进行处理，具体逻辑是：
+    2.1骇客事件：去Lighting - Hacker下复制所有子节点，变成Lighting的直接子节点，当事件结束后移除
+    2.2熔岩事件：去Lighting - Lava下复制所有子节点，变成Lighting的直接子节点，当事件结束后移除
+    2.3后续我们也会拓展其他事件，然后需要在这里使用类似的逻辑 
+    2.4注意天空盒也是玩家自己客户端的逻辑，不要做成服务端逻辑
+
+我们对配置表加了个新的字段：天空盒路径：
+特殊事件Id	事件名	发生权重	持续时间（秒）	ReplicatedStorage中的名字	天空盒路径
+1001	骇客事件	100	300	EventHacker	Lighting/Hacker
+1002	熔岩事件	100	300	EventLava	Lighting/Lava
+

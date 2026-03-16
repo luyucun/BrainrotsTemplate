@@ -58,9 +58,12 @@ local WeaponService = requireServerModule("WeaponService")
 local WeaponKnockbackService = requireServerModule("WeaponKnockbackService")
 local GMCommandService = requireServerModule("GMCommandService")
 local BrainrotService = requireServerModule("BrainrotService")
+local RebirthService = requireServerModule("RebirthService")
 local FriendBonusService = requireServerModule("FriendBonusService")
 local SocialService = requireServerModule("SocialService")
 local QuickTeleportService = requireServerModule("QuickTeleportService")
+local GlobalLeaderboardService = requireServerModule("GlobalLeaderboardService")
+local SpecialEventService = requireServerModule("SpecialEventService")
 
 RemoteEventService:Init()
 PlayerDataService:Init()
@@ -80,13 +83,6 @@ QuickTeleportService:Init({
     HomeService = HomeService,
     RemoteEventService = RemoteEventService,
 })
-GMCommandService:Init({
-    CurrencyService = CurrencyService,
-    BrainrotService = BrainrotService,
-    PlayerDataService = PlayerDataService,
-    HomeService = HomeService,
-    WeaponService = WeaponService,
-})
 BrainrotService:Init({
     PlayerDataService = PlayerDataService,
     HomeService = HomeService,
@@ -94,9 +90,32 @@ BrainrotService:Init({
     FriendBonusService = FriendBonusService,
     RemoteEventService = RemoteEventService,
 })
+RebirthService:Init({
+    PlayerDataService = PlayerDataService,
+    CurrencyService = CurrencyService,
+    BrainrotService = BrainrotService,
+    RemoteEventService = RemoteEventService,
+})
+GMCommandService:Init({
+    CurrencyService = CurrencyService,
+    BrainrotService = BrainrotService,
+    RebirthService = RebirthService,
+    PlayerDataService = PlayerDataService,
+    HomeService = HomeService,
+    WeaponService = WeaponService,
+    GlobalLeaderboardService = GlobalLeaderboardService,
+    SpecialEventService = SpecialEventService,
+})
 SocialService:Init({
     PlayerDataService = PlayerDataService,
     HomeService = HomeService,
+    RemoteEventService = RemoteEventService,
+})
+GlobalLeaderboardService:Init({
+    PlayerDataService = PlayerDataService,
+    FriendBonusService = FriendBonusService,
+})
+SpecialEventService:Init({
     RemoteEventService = RemoteEventService,
 })
 
@@ -113,8 +132,10 @@ local function onPlayerAdded(player)
     WeaponKnockbackService:OnPlayerReady(player)
     GMCommandService:BindPlayer(player)
     FriendBonusService:OnPlayerReady(player)
+    RebirthService:OnPlayerReady(player)
     BrainrotService:OnPlayerReady(player, assignedHome)
     SocialService:OnPlayerReady(player, assignedHome)
+    SpecialEventService:OnPlayerReady(player)
 
     local homeAssignedEvent = RemoteEventService:GetEvent("HomeAssigned")
     if homeAssignedEvent then
@@ -128,6 +149,7 @@ local function onPlayerAdded(player)
     end
 
     CurrencyService:OnPlayerReady(player)
+    GlobalLeaderboardService:OnPlayerReady(player)
 
     if #Players:GetPlayers() > GameConfig.MAX_SERVER_PLAYERS then
         warn("[MainServer] 在线人数超过配置上限，请检查游戏服务器最大人数设置")
@@ -139,10 +161,13 @@ local function onPlayerRemoving(player)
     GMCommandService:UnbindPlayer(player)
     WeaponKnockbackService:OnPlayerRemoving(player)
     WeaponService:OnPlayerRemoving(player)
+    GlobalLeaderboardService:OnPlayerRemoving(player)
     FriendBonusService:OnPlayerRemoving(player)
     BrainrotService:OnPlayerRemoving(player)
+    RebirthService:OnPlayerRemoving(player)
     CurrencyService:OnPlayerRemoving(player)
     SocialService:OnPlayerRemoving(player, assignedHome)
+    SpecialEventService:OnPlayerRemoving(player)
     HomeService:ReleaseHome(player)
     PlayerDataService:OnPlayerRemoving(player)
 end
@@ -155,5 +180,6 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 game:BindToClose(function()
+    GlobalLeaderboardService:FlushAllPlayers()
     PlayerDataService:SaveAllPlayers()
 end)

@@ -24,6 +24,12 @@ local RemoteNames = {
         RequestFriendBonusSync = "RequestFriendBonusSync",
         RequestQuickTeleport = "RequestQuickTeleport",
         ClaimCashFeedback = "ClaimCashFeedback",
+        RebirthStateSync = "RebirthStateSync",
+        RequestRebirthStateSync = "RequestRebirthStateSync",
+        RequestRebirth = "RequestRebirth",
+        RebirthFeedback = "RebirthFeedback",
+        SpecialEventStateSync = "SpecialEventStateSync",
+        RequestSpecialEventStateSync = "RequestSpecialEventStateSync",
     },
     Brainrot = {
         BrainrotStateSync = "BrainrotStateSync",

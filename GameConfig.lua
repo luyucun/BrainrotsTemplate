@@ -10,7 +10,8 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V1.8.2"
+GameConfig.VERSION = "V2.4.1"
+
 GameConfig.MAX_SERVER_PLAYERS = 5
 
 GameConfig.HOME = {
@@ -29,9 +30,11 @@ GameConfig.DATASTORE = {
 	MaxRetries = 3,
 	RetryDelay = 1.5,
 }
+
 GameConfig.DATASTORE.ActiveName = RunService:IsStudio()
 	and GameConfig.DATASTORE.StudioName
 	or GameConfig.DATASTORE.LiveName
+
 GameConfig.WEAPON = {
 	ToolsRootFolderName = "Tools",
 	StarterWeaponFolderName = "StarterWeapon",
@@ -45,6 +48,28 @@ GameConfig.WEAPON = {
 	KnockbackHitCooldownSeconds = 0.45,
 	KnockbackHorizontalVelocity = 75,
 	KnockbackVerticalVelocity = 35,
+}
+
+GameConfig.UI = {
+	ModalBlurName = "Blur",
+	ModalOpenFromScale = 0.82,
+	ModalOpenOvershootScale = 1.06,
+	ModalOpenOvershootDuration = 0.18,
+	ModalOpenSettleDuration = 0.12,
+	ModalCloseOvershootScale = 1.04,
+	ModalCloseOvershootDuration = 0.1,
+	ModalCloseToScale = 0.78,
+	ModalCloseShrinkDuration = 0.14,
+}
+
+GameConfig.REBIRTH = {
+	RequestDebounceSeconds = 0.35,
+	SuccessTipText = "Rebirth successful!",
+	TipsDisplaySeconds = 2,
+	TipsEnterOffsetY = 40,
+	TipsFadeOffsetY = -8,
+	WrongSoundTemplateName = "Wrong",
+	WrongSoundAssetId = "rbxassetid://118029437877580",
 }
 
 GameConfig.GM = {
@@ -65,7 +90,7 @@ GameConfig.BRAINROT = {
 	PlatformTriggerName = "Trigger",
 	PositionPrefix = "Position",
 	ClaimPrefix = "Claim",
-	GoldInfoGuiName = "GoldInfo",
+	MoneyFrameName = "Money",
 	CurrentGoldLabelName = "CurrentGold",
 	OfflineGoldLabelName = "OfflineGold",
 	OfflineProductionCapSeconds = 3600,
@@ -183,10 +208,65 @@ GameConfig.QUICK_TELEPORT = {
 
 GameConfig.LEADERBOARD = {
 	CashStatName = "Cash",
+	RefreshIntervalSeconds = 120,
+	MaxEntries = 50,
+	PendingRankText = "--",
+	OverflowRankText = "50+",
+	EnableOrderedDataStoreInStudio = true,
+	OrderedDataStores = {
+		Production = {
+			StudioName = "Brainrots_GlobalLeaderboard_Production_STUDIO_V1",
+			LiveName = "Brainrots_GlobalLeaderboard_Production_LIVE_V1",
+		},
+		Playtime = {
+			StudioName = "Brainrots_GlobalLeaderboard_Playtime_STUDIO_V1",
+			LiveName = "Brainrots_GlobalLeaderboard_Playtime_LIVE_V1",
+		},
+	},
+	BoardModels = {
+		Production = "Leaderboard01",
+		Playtime = "Leaderboard02",
+	},
+	PlayerAttributes = {
+		ProductionValue = "GlobalLeaderboardProductionValue",
+		ProductionRank = "GlobalLeaderboardProductionRankDisplay",
+		PlaytimeValue = "GlobalLeaderboardPlaytimeSeconds",
+		PlaytimeRank = "GlobalLeaderboardPlaytimeRankDisplay",
+	},
+}
+
+GameConfig.SPECIAL_EVENT = {
+	ScheduleIntervalSeconds = 30 * 60,
+	SchedulerCheckIntervalSeconds = 1,
+	ScheduleAnchorUnix = 1735689600, -- 2025-01-01 00:00:00 UTC
+	TemplateRootFolderName = "Event",
+	RuntimeFolderName = "SpecialEventsRuntime",
+	AttachPartNames = {
+		"HumanoidRootPart",
+		"UpperTorso",
+		"Torso",
+		"Head",
+	},
+	Entries = {
+		{
+			Id = 1001,
+			Name = "骇客事件",
+			Weight = 100,
+			DurationSeconds = 300,
+			TemplateName = "EventHacker",
+			LightingPath = "Lighting/Hacker",		},
+		{
+			Id = 1002,
+			Name = "熔岩事件",
+			Weight = 100,
+			DurationSeconds = 300,
+			TemplateName = "EventLava",
+			LightingPath = "Lighting/Lava",		},
+	},
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {
-	Version = 1,
+	Version = 3,
 	Currency = {
 		Coins = 0,
 	},
@@ -204,11 +284,16 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 		EquippedInstanceId = 0,
 		StarterGranted = false,
 		Inventory = {},
+		UnlockedBrainrotIds = {},
 	},
 	WeaponState = {
 		StarterWeaponGranted = false,
 		OwnedWeaponIds = {},
 		EquippedWeaponId = "",
+	},
+	LeaderboardState = {
+		TotalPlaySeconds = 0,
+		ProductionSpeedSnapshot = 0,
 	},
 	Meta = {
 		CreatedAt = 0,
@@ -223,11 +308,3 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 }
 
 return GameConfig
-
-
-
-
-
-
-
-

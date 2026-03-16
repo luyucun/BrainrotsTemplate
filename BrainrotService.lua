@@ -376,7 +376,7 @@ local function formatCurrentGoldText(value)
 end
 
 local function formatOfflineGoldText(value)
-	return "Offline:$" .. FormatUtil.FormatWithCommas(value)
+	return "IdleEarnings $" .. FormatUtil.FormatWithCommas(value)
 end
 
 local function normalizeAnimationId(animationId)
@@ -496,6 +496,19 @@ local function findFirstTextLabelByName(root, nodeName)
 
 	local node = root:FindFirstChild(nodeName, true)
 	if node and node:IsA("TextLabel") then
+		return node
+	end
+
+	return nil
+end
+
+local function findFirstGuiObjectByName(root, nodeName)
+	if not root then
+		return nil
+	end
+
+	local node = root:FindFirstChild(nodeName, true)
+	if node and node:IsA("GuiObject") then
 		return node
 	end
 
@@ -1251,8 +1264,115 @@ function BrainrotService:_getOrCreateDataContainers(player)
 	if type(brainrotData.StarterGranted) ~= "boolean" then
 		brainrotData.StarterGranted = false
 	end
+	if type(brainrotData.UnlockedBrainrotIds) ~= "table" then
+		brainrotData.UnlockedBrainrotIds = {}
+	end
+
+	self:_getOrCreateUnlockedBrainrotMap(brainrotData)
 
 	return playerData, brainrotData, placedBrainrots, productionState
+end
+
+function BrainrotService:_getOrCreateUnlockedBrainrotMap(brainrotData)
+	if type(brainrotData) ~= "table" then
+		return nil
+	end
+
+	local sourceValue = brainrotData.UnlockedBrainrotIds
+	local unlockedMap = {}
+	if type(sourceValue) == "table" then
+		for key, value in pairs(sourceValue) do
+			local parsedBrainrotId = 0
+			if value == true then
+				parsedBrainrotId = math.floor(tonumber(key) or 0)
+			elseif type(value) == "number" or type(value) == "string" then
+				parsedBrainrotId = math.floor(tonumber(value) or 0)
+			elseif value ~= false and value ~= nil then
+				parsedBrainrotId = math.floor(tonumber(key) or 0)
+			end
+
+			if parsedBrainrotId > 0 and BrainrotConfig.ById[parsedBrainrotId] then
+				unlockedMap[tostring(parsedBrainrotId)] = true
+			end
+		end
+	end
+
+	brainrotData.UnlockedBrainrotIds = unlockedMap
+	return unlockedMap
+end
+
+function BrainrotService:_markBrainrotUnlocked(brainrotData, brainrotId)
+	local parsedBrainrotId = math.floor(tonumber(brainrotId) or 0)
+	if parsedBrainrotId <= 0 or not BrainrotConfig.ById[parsedBrainrotId] then
+		return false
+	end
+
+	local unlockedMap = self:_getOrCreateUnlockedBrainrotMap(brainrotData)
+	if not unlockedMap then
+		return false
+	end
+
+	local unlockKey = tostring(parsedBrainrotId)
+	if unlockedMap[unlockKey] == true then
+		return false
+	end
+
+	unlockedMap[unlockKey] = true
+	return true
+end
+
+function BrainrotService:_syncUnlockedBrainrots(brainrotData, placedBrainrots)
+	local unlockedMap = self:_getOrCreateUnlockedBrainrotMap(brainrotData)
+	if not unlockedMap then
+		return {}
+	end
+
+	if type(brainrotData.Inventory) == "table" then
+		for _, inventoryItem in ipairs(brainrotData.Inventory) do
+			local brainrotId = math.floor(tonumber(inventoryItem.BrainrotId) or 0)
+			if brainrotId > 0 and BrainrotConfig.ById[brainrotId] then
+				unlockedMap[tostring(brainrotId)] = true
+			end
+		end
+	end
+
+	if type(placedBrainrots) == "table" then
+		for _, placedData in pairs(placedBrainrots) do
+			local brainrotId = math.floor(tonumber(placedData.BrainrotId) or 0)
+			if brainrotId > 0 and BrainrotConfig.ById[brainrotId] then
+				unlockedMap[tostring(brainrotId)] = true
+			end
+		end
+	end
+
+	return unlockedMap
+end
+
+function BrainrotService:_buildUnlockedBrainrotPayload(brainrotData, placedBrainrots)
+	local unlockedMap = self:_syncUnlockedBrainrots(brainrotData, placedBrainrots)
+	local unlockedBrainrotIds = {}
+	local discoveredCount = 0
+	local discoverableCount = 0
+
+	for _, brainrotDefinition in ipairs(BrainrotConfig.Entries) do
+		local parsedBrainrotId = math.floor(tonumber(brainrotDefinition.Id) or 0)
+		if parsedBrainrotId > 0 then
+			discoverableCount += 1
+			if unlockedMap[tostring(parsedBrainrotId)] == true then
+				discoveredCount += 1
+			end
+		end
+	end
+
+	for brainrotIdText, unlocked in pairs(unlockedMap) do
+		local parsedBrainrotId = math.floor(tonumber(brainrotIdText) or 0)
+		if unlocked == true and parsedBrainrotId > 0 and BrainrotConfig.ById[parsedBrainrotId] then
+			table.insert(unlockedBrainrotIds, parsedBrainrotId)
+		end
+	end
+
+	table.sort(unlockedBrainrotIds)
+	return unlockedBrainrotIds, discoveredCount, discoverableCount
 end
 
 function BrainrotService:_getOrCreateProductionSlot(productionState, positionKey)
@@ -1285,6 +1405,14 @@ function BrainrotService:_collectProductionBonusRates(player)
 		})
 	end
 
+	local rebirthBonusRate = math.max(0, tonumber(player:GetAttribute("RebirthBonusRate")) or 0)
+	if rebirthBonusRate > 0 then
+		table.insert(rates, {
+			Source = "Rebirth",
+			Rate = rebirthBonusRate,
+		})
+	end
+
 	local extraBonusPercent = math.max(0, tonumber(player:GetAttribute("ExtraProductionBonusPercent")) or 0)
 	if extraBonusPercent > 0 then
 		table.insert(rates, {
@@ -1303,6 +1431,11 @@ function BrainrotService:_resolveProductionMultiplier(player)
 	end
 
 	return 1 + totalBonusRate, totalBonusRate
+end
+
+function BrainrotService:_resolveOfflineProductionMultiplier(player)
+	local rebirthBonusRate = math.max(0, tonumber(player:GetAttribute("RebirthBonusRate")) or 0)
+	return 1 + rebirthBonusRate
 end
 
 function BrainrotService:_computePlacedBaseProductionSpeed(placedBrainrots)
@@ -1346,6 +1479,8 @@ function BrainrotService:_updatePlayerTotalProductionSpeed(player, placedBrainro
 end
 
 function BrainrotService:_ensureStarterInventory(playerData, brainrotData, placedBrainrots)
+	self:_syncUnlockedBrainrots(brainrotData, placedBrainrots)
+
 	if brainrotData.StarterGranted then
 		return
 	end
@@ -1365,6 +1500,7 @@ function BrainrotService:_ensureStarterInventory(playerData, brainrotData, place
 				InstanceId = instanceId,
 				BrainrotId = brainrotId,
 			})
+			self:_markBrainrotUnlocked(brainrotData, brainrotId)
 		end
 	end
 
@@ -1627,6 +1763,7 @@ function BrainrotService:GrantBrainrot(player, brainrotId, quantity, reason)
 	end
 
 	brainrotData.StarterGranted = true
+	self:_markBrainrotUnlocked(brainrotData, parsedBrainrotId)
 
 	local backpack = player:FindFirstChild("Backpack") or player:WaitForChild("Backpack", 2)
 	local grantedCount = 0
@@ -1684,7 +1821,7 @@ function BrainrotService:_restorePlacedFromData(player)
 	end
 end
 
-function BrainrotService:_applyOfflineProduction(playerData, placedBrainrots, productionState)
+function BrainrotService:_applyOfflineProduction(player, playerData, placedBrainrots, productionState)
 	local meta = type(playerData.Meta) == "table" and playerData.Meta or nil
 	if not meta then
 		return
@@ -1709,6 +1846,8 @@ function BrainrotService:_applyOfflineProduction(playerData, placedBrainrots, pr
 		return
 	end
 
+	local offlineMultiplier = self:_resolveOfflineProductionMultiplier(player)
+
 	for positionKey, placedData in pairs(placedBrainrots) do
 		local brainrotId = tonumber(placedData.BrainrotId)
 		local brainrotDefinition = brainrotId and BrainrotConfig.ById[brainrotId] or nil
@@ -1716,7 +1855,8 @@ function BrainrotService:_applyOfflineProduction(playerData, placedBrainrots, pr
 			local coinPerSecond = math.max(0, math.floor(tonumber(brainrotDefinition.CoinPerSecond) or 0))
 			if coinPerSecond > 0 then
 				local slot = self:_getOrCreateProductionSlot(productionState, positionKey)
-				slot.OfflineGold += coinPerSecond * effectiveSeconds
+				local producedExact = coinPerSecond * effectiveSeconds * offlineMultiplier
+				slot.OfflineGold += math.floor(producedExact + 0.0001)
 			end
 		end
 	end
@@ -1780,12 +1920,16 @@ function BrainrotService:PushBrainrotState(player)
 		return a.positionKey < b.positionKey
 	end)
 
+	local unlockedBrainrotIds, discoveredCount, discoverableCount = self:_buildUnlockedBrainrotPayload(brainrotData, placedBrainrots)
 	local totalBaseSpeed, totalMultiplier, totalFinalSpeed = self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
 
 	self._brainrotStateSyncEvent:FireClient(player, {
 		inventory = inventoryPayload,
 		placed = placedPayload,
 		equippedInstanceId = tonumber(brainrotData.EquippedInstanceId) or 0,
+		unlockedBrainrotIds = unlockedBrainrotIds,
+		discoveredCount = discoveredCount,
+		discoverableCount = discoverableCount,
 		totalProductionBaseSpeed = totalBaseSpeed,
 		totalProductionMultiplier = totalMultiplier,
 		totalProductionSpeed = totalFinalSpeed,
@@ -1833,6 +1977,7 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
 	end
 
 	self:_ensureStarterInventory(playerData, brainrotData, placedBrainrots)
+	self:_syncUnlockedBrainrots(brainrotData, placedBrainrots)
 
 	local targetHome = assignedHome or self._homeService:GetAssignedHome(player)
 	if targetHome then
@@ -1844,7 +1989,7 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
 	end
 
 	self:_restorePlacedFromData(player)
-	self:_applyOfflineProduction(playerData, placedBrainrots, productionState)
+	self:_applyOfflineProduction(player, playerData, placedBrainrots, productionState)
 	self:_refreshBrainrotTools(player)
 	self:PushBrainrotState(player)
 	self:_refreshAllClaimUi(player, placedBrainrots, productionState)
@@ -2668,9 +2813,12 @@ function BrainrotService:_pushClaimCashFeedback(player, claimInfo)
 	})
 end
 
-function BrainrotService:_playClaimFeedback(player, claimInfo)
-	self:_playClaimPressAnimation(claimInfo)
-	self:_playClaimBounceAnimation(player, claimInfo.PositionKey)
+function BrainrotService:_hasPlacedBrainrotAtPosition(player, positionKey)
+	local _playerData, _brainrotData, placedBrainrots = self:_getOrCreateDataContainers(player)
+	return type(placedBrainrots) == "table" and placedBrainrots[positionKey] ~= nil
+end
+
+function BrainrotService:_playClaimRewardFeedback(player, claimInfo)
 	self:_playClaimTouchEffect(player, claimInfo)
 	self:_pushClaimCashFeedback(player, claimInfo)
 end
@@ -2794,6 +2942,33 @@ function BrainrotService:_claimPositionGold(player, positionKey)
 	return true, claimAmount
 end
 
+function BrainrotService:ResetProductionForRebirth(player)
+	local playerData, _brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
+	if not playerData or type(placedBrainrots) ~= "table" or type(productionState) ~= "table" then
+		return false
+	end
+
+	for _, slot in pairs(productionState) do
+		if type(slot) == "table" then
+			slot.CurrentGold = 0
+			slot.OfflineGold = 0
+			slot.FriendBonusRemainder = 0
+		end
+	end
+
+	for positionKey in pairs(placedBrainrots) do
+		local slot = self:_getOrCreateProductionSlot(productionState, positionKey)
+		slot.CurrentGold = 0
+		slot.OfflineGold = 0
+		slot.FriendBonusRemainder = 0
+	end
+
+	self:_refreshAllClaimUi(player, placedBrainrots, productionState)
+	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+	self:PushBrainrotState(player)
+	return true
+end
+
 function BrainrotService:_bindHomePrompts(player, homeModel)
 	self:_clearPromptConnections(player)
 	local userId = player.UserId
@@ -2865,8 +3040,19 @@ function BrainrotService:_bindHomeClaims(player, homeModel)
 				return
 			end
 
-			self:_playClaimFeedback(player, claimInfo)
-			self:_claimPositionGold(player, claimInfo.PositionKey)
+			self:_playClaimPressAnimation(claimInfo)
+
+			if not self:_hasPlacedBrainrotAtPosition(player, claimInfo.PositionKey) then
+				self:_claimPositionGold(player, claimInfo.PositionKey)
+				return
+			end
+
+			self:_playClaimBounceAnimation(player, claimInfo.PositionKey)
+
+			local didClaim = self:_claimPositionGold(player, claimInfo.PositionKey)
+			if didClaim then
+				self:_playClaimRewardFeedback(player, claimInfo)
+			end
 		end))
 
 		table.insert(connectionList, triggerPart.TouchEnded:Connect(function(hitPart)
@@ -3029,7 +3215,7 @@ function BrainrotService:_scanHomeClaims(homeModel)
 
 	local claimPrefix = tostring(GameConfig.BRAINROT.ClaimPrefix or "Claim")
 	local positionPrefix = tostring(GameConfig.BRAINROT.PositionPrefix or "Position")
-	local goldInfoGuiName = tostring(GameConfig.BRAINROT.GoldInfoGuiName or "GoldInfo")
+	local moneyFrameName = tostring(GameConfig.BRAINROT.MoneyFrameName or "Money")
 	local currentGoldLabelName = tostring(GameConfig.BRAINROT.CurrentGoldLabelName or "CurrentGold")
 	local offlineGoldLabelName = tostring(GameConfig.BRAINROT.OfflineGoldLabelName or "OfflineGold")
 
@@ -3038,25 +3224,6 @@ function BrainrotService:_scanHomeClaims(homeModel)
 			local claimIndex = parseTrailingIndex(descendant.Name, claimPrefix)
 			if claimIndex then
 				local positionKey = string.format("%s%d", positionPrefix, claimIndex)
-
-				local goldInfoGui = descendant:FindFirstChild(goldInfoGuiName)
-				if not (goldInfoGui and goldInfoGui:IsA("BillboardGui")) then
-					goldInfoGui = nil
-				end
-
-				local currentGoldLabel = nil
-				local offlineGoldLabel = nil
-				if goldInfoGui then
-					local currentCandidate = goldInfoGui:FindFirstChild(currentGoldLabelName, true)
-					if currentCandidate and currentCandidate:IsA("TextLabel") then
-						currentGoldLabel = currentCandidate
-					end
-
-					local offlineCandidate = goldInfoGui:FindFirstChild(offlineGoldLabelName, true)
-					if offlineCandidate and offlineCandidate:IsA("TextLabel") then
-						offlineGoldLabel = offlineCandidate
-					end
-				end
 
 				local touchPart = descendant:FindFirstChild("Touch")
 				if touchPart and not touchPart:IsA("BasePart") then
@@ -3069,6 +3236,10 @@ function BrainrotService:_scanHomeClaims(homeModel)
 					end
 				end
 
+				local moneyFrame = findFirstGuiObjectByName(touchPart, moneyFrameName)
+				local currentGoldLabel = findFirstTextLabelByName(moneyFrame, currentGoldLabelName)
+				local offlineGoldLabel = findFirstTextLabelByName(moneyFrame, offlineGoldLabelName)
+
 				claimsByPositionKey[positionKey] = {
 					PositionKey = positionKey,
 					ClaimPart = descendant,
@@ -3076,7 +3247,7 @@ function BrainrotService:_scanHomeClaims(homeModel)
 					ClaimKey = descendant.Name,
 					ClaimBaseCFrame = descendant.CFrame,
 					TouchBaseCFrame = touchPart and touchPart.CFrame or nil,
-					GoldInfoGui = goldInfoGui,
+					MoneyFrame = moneyFrame,
 					CurrentGoldLabel = currentGoldLabel,
 					OfflineGoldLabel = offlineGoldLabel,
 				}
@@ -3122,12 +3293,13 @@ function BrainrotService:_applyClaimUi(claimInfo, enabled, currentGold, offlineG
 	local previousCurrentGold = tonumber(claimInfo._lastCurrentGold) or 0
 	local previousOfflineGold = tonumber(claimInfo._lastOfflineGold) or 0
 
-	if claimInfo.GoldInfoGui then
-		claimInfo.GoldInfoGui.Enabled = enabled
+	if claimInfo.MoneyFrame and claimInfo.MoneyFrame:IsA("GuiObject") then
+		claimInfo.MoneyFrame.Visible = enabled == true
 	end
 
 	if claimInfo.CurrentGoldLabel then
 		claimInfo.CurrentGoldLabel.Text = formatCurrentGoldText(currentGold)
+		claimInfo.CurrentGoldLabel.Visible = enabled == true
 		if enabled and currentGold ~= previousCurrentGold then
 			self:_pulseLabel(claimInfo.CurrentGoldLabel)
 		end
@@ -3408,4 +3580,3 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
 	end
 end
 return BrainrotService
-

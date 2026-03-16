@@ -72,6 +72,40 @@ local function waitForRetry(attempt)
     task.wait(GameConfig.DATASTORE.RetryDelay * attempt)
 end
 
+local function ensureMetaTable(playerData)
+    if type(playerData) ~= "table" then
+        return nil
+    end
+
+    local meta = playerData.Meta
+    if type(meta) ~= "table" then
+        meta = {}
+        playerData.Meta = meta
+    end
+
+    meta.CreatedAt = math.max(0, math.floor(tonumber(meta.CreatedAt) or 0))
+    meta.LastLoginAt = math.max(0, math.floor(tonumber(meta.LastLoginAt) or 0))
+    meta.LastLogoutAt = math.max(0, math.floor(tonumber(meta.LastLogoutAt) or 0))
+    meta.LastSaveAt = math.max(0, math.floor(tonumber(meta.LastSaveAt) or 0))
+    return meta
+end
+
+local function ensureLeaderboardState(playerData)
+    if type(playerData) ~= "table" then
+        return nil
+    end
+
+    local leaderboardState = playerData.LeaderboardState
+    if type(leaderboardState) ~= "table" then
+        leaderboardState = {}
+        playerData.LeaderboardState = leaderboardState
+    end
+
+    leaderboardState.TotalPlaySeconds = math.max(0, math.floor(tonumber(leaderboardState.TotalPlaySeconds) or 0))
+    leaderboardState.ProductionSpeedSnapshot = math.max(0, tonumber(leaderboardState.ProductionSpeedSnapshot) or 0)
+    return leaderboardState
+end
+
 function PlayerDataService:Init()
     if self._autosaveThread then
         return
@@ -114,7 +148,7 @@ function PlayerDataService:LoadPlayerData(player)
                 break
             end
 
-             readFailed = true
+            readFailed = true
 
             if isStudioApiDeniedError(loadedData) then
                 if not self._didWarnStudioApiDenied then
@@ -154,7 +188,17 @@ function PlayerDataService:LoadPlayerData(player)
     end
 
     mergeDefaults(loadedData, GameConfig.DEFAULT_PLAYER_DATA)
-    loadedData.Meta.LastLoginAt = now
+    local meta = ensureMetaTable(loadedData)
+    local leaderboardState = ensureLeaderboardState(loadedData)
+    if meta.CreatedAt <= 0 then
+        meta.CreatedAt = now
+    end
+    if leaderboardState then
+        leaderboardState.TotalPlaySeconds = math.max(0, math.floor(tonumber(leaderboardState.TotalPlaySeconds) or 0))
+        leaderboardState.ProductionSpeedSnapshot = math.max(0, tonumber(leaderboardState.ProductionSpeedSnapshot) or 0)
+    end
+
+    meta.LastLoginAt = now
     self._sessionDataByUserId[userId] = loadedData
     self._allowDataStoreSaveByUserId[userId] = allowDataStoreSave
 
@@ -201,15 +245,103 @@ function PlayerDataService:SetHomeId(player, homeId)
     data.HomeState.HomeId = tostring(homeId or "")
 end
 
+function PlayerDataService:GetTotalPlaySeconds(player)
+    local data = self:GetPlayerData(player)
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local leaderboardState = ensureLeaderboardState(data)
+    local meta = ensureMetaTable(data)
+    if not (leaderboardState and meta) then
+        return 0
+    end
+
+    local totalPlaySeconds = math.max(0, math.floor(tonumber(leaderboardState.TotalPlaySeconds) or 0))
+    local sessionStartedAt = math.max(0, math.floor(tonumber(meta.LastLoginAt) or 0))
+    if sessionStartedAt <= 0 then
+        return totalPlaySeconds
+    end
+
+    local now = os.time()
+    local elapsed = math.max(0, now - sessionStartedAt)
+    return totalPlaySeconds + elapsed
+end
+
+function PlayerDataService:CommitPlaytime(player, nowTimestamp)
+    local data = self:GetPlayerData(player)
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local leaderboardState = ensureLeaderboardState(data)
+    local meta = ensureMetaTable(data)
+    if not (leaderboardState and meta) then
+        return 0
+    end
+
+    local now = math.max(0, math.floor(tonumber(nowTimestamp) or 0))
+    if now <= 0 then
+        now = os.time()
+    end
+
+    local sessionStartedAt = math.max(0, math.floor(tonumber(meta.LastLoginAt) or 0))
+    if sessionStartedAt > 0 then
+        local elapsed = math.max(0, now - sessionStartedAt)
+        if elapsed > 0 then
+            leaderboardState.TotalPlaySeconds = math.max(0, math.floor(tonumber(leaderboardState.TotalPlaySeconds) or 0)) + elapsed
+        end
+    end
+
+    meta.LastLoginAt = now
+    return math.max(0, math.floor(tonumber(leaderboardState.TotalPlaySeconds) or 0))
+end
+
+function PlayerDataService:GetProductionSpeedSnapshot(player)
+    local data = self:GetPlayerData(player)
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local leaderboardState = ensureLeaderboardState(data)
+    if not leaderboardState then
+        return 0
+    end
+
+    return math.max(0, tonumber(leaderboardState.ProductionSpeedSnapshot) or 0)
+end
+
+function PlayerDataService:SetProductionSpeedSnapshot(player, value)
+    local data = self:GetPlayerData(player)
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local leaderboardState = ensureLeaderboardState(data)
+    if not leaderboardState then
+        return 0
+    end
+
+    leaderboardState.ProductionSpeedSnapshot = math.max(0, tonumber(value) or 0)
+    return leaderboardState.ProductionSpeedSnapshot
+end
+
 function PlayerDataService:ResetPlayerData(player)
     local userId = player.UserId
     local now = os.time()
+    local preservedTotalPlaySeconds = self:GetTotalPlaySeconds(player)
 
     local resetData = deepCopy(GameConfig.DEFAULT_PLAYER_DATA)
-    resetData.Meta.CreatedAt = now
-    resetData.Meta.LastLoginAt = now
-    resetData.Meta.LastLogoutAt = 0
-    resetData.Meta.LastSaveAt = 0
+    local meta = ensureMetaTable(resetData)
+    local leaderboardState = ensureLeaderboardState(resetData)
+    meta.CreatedAt = now
+    meta.LastLoginAt = now
+    meta.LastLogoutAt = 0
+    meta.LastSaveAt = 0
+    if leaderboardState then
+        leaderboardState.TotalPlaySeconds = preservedTotalPlaySeconds
+        leaderboardState.ProductionSpeedSnapshot = 0
+    end
 
     self._sessionDataByUserId[userId] = resetData
     return resetData
@@ -222,7 +354,11 @@ function PlayerDataService:SavePlayerData(player, options)
         return false
     end
 
-    data.Meta.LastSaveAt = os.time()
+    self:CommitPlaytime(player)
+    local meta = ensureMetaTable(data)
+    if meta then
+        meta.LastSaveAt = os.time()
+    end
 
     if not self._dataStore then
         return true
@@ -277,8 +413,11 @@ function PlayerDataService:SaveAllPlayers()
     local now = os.time()
     for _, player in ipairs(Players:GetPlayers()) do
         local data = self._sessionDataByUserId[player.UserId]
-        if type(data) == "table" and type(data.Meta) == "table" then
-            data.Meta.LastLogoutAt = now
+        if type(data) == "table" then
+            local meta = ensureMetaTable(data)
+            if meta then
+                meta.LastLogoutAt = now
+            end
         end
 
         local success = self:SavePlayerData(player)
@@ -292,8 +431,11 @@ end
 
 function PlayerDataService:OnPlayerRemoving(player)
     local data = self._sessionDataByUserId[player.UserId]
-    if type(data) == "table" and type(data.Meta) == "table" then
-        data.Meta.LastLogoutAt = os.time()
+    if type(data) == "table" then
+        local meta = ensureMetaTable(data)
+        if meta then
+            meta.LastLogoutAt = os.time()
+        end
     end
 
     self:SavePlayerData(player)
