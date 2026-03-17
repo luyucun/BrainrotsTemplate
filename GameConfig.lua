@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: GameConfig
 脚本文件: GameConfig.lua
 脚本类型: ModuleScript
@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V2.4.1"
+GameConfig.VERSION = "V2.5"
 
 GameConfig.MAX_SERVER_PLAYERS = 5
 
@@ -140,6 +140,25 @@ GameConfig.BRAINROT = {
 	ClaimCoinCollectArcHorizontalJitter = 0.75, -- 吸附弧线水平抖动范围（Stud）
 	ClaimCoinCollectDestroyDistance = 0.8, -- 接近终点后判定销毁的距离阈值（Stud）
 	ClaimCoinCollectFadeOutDuration = 0.075, -- 到达终点时淡出缩小时长（秒）
+	BaseLevel = 1, -- 脑红默认等级
+	UpgradeCostMultiplier = 1.5, -- V2.5: 升级费用倍率，cost = baseSpeed * 1.5^(level-1)
+	UpgradeProductionMultiplier = 1.25, -- V2.5: 升级后产速倍率，speed = baseSpeed * 1.25^(level-1)
+	UpgradeValueDisplayDecimals = 1, -- V2.5: 升级费用/产速/UI 文案最多显示 1 位小数
+	UpgradeInternalPrecisionDecimals = 4, -- V2.5: 内部经济数值保留精度
+	UpgradeRequestDebounceSeconds = 0.2, -- V2.5: 客户端升级点击请求防抖
+	BrandPrefix = "Brand", -- V2.5: 升级台命名前缀
+	BrandSurfaceGuiName = "SurfaceGui", -- V2.5: 升级台 SurfaceGui 名称
+	BrandFrameName = "Frame", -- V2.5: 升级台主框体名称
+	BrandMoneyRootName = "Money", -- V2.5: 升级台费用信息根节点
+	BrandCostLabelName = "CurrentGold", -- V2.5: 升级费用文本节点
+	BrandLevelLabelName = "Level", -- V2.5: 升级等级文本节点
+	BrandArrowName = "Arrow", -- V2.5: 升级箭头图片节点
+	UpgradeSuccessSoundTemplateName = "MoneyTouch", -- V2.5: 升级成功音效模板
+	UpgradeSuccessSoundAssetId = "rbxassetid://72535887807534", -- V2.5: 升级成功音效资源
+	UpgradeWrongSoundTemplateName = "Wrong", -- V2.5: 升级失败音效模板
+	UpgradeWrongSoundAssetId = "rbxassetid://118029437877580", -- V2.5: 升级失败音效资源
+	BrandArrowFloatOffset = 8, -- V2.5: 箭头上下浮动像素偏移
+	BrandArrowFloatDuration = 0.9, -- V2.5: 箭头单程浮动时长
 	InfoTemplateRootName = "UI",
 	InfoTemplateName = "BaseInfo",
 	InfoAttachmentName = "Info",
@@ -266,7 +285,7 @@ GameConfig.SPECIAL_EVENT = {
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {
-	Version = 3,
+	Version = 4,
 	Currency = {
 		Coins = 0,
 	},
@@ -308,3 +327,4 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 }
 
 return GameConfig
+

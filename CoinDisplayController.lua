@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: CoinDisplayController
 脚本文件: CoinDisplayController.lua
 脚本类型: ModuleScript
@@ -182,7 +182,7 @@ function CoinDisplayController:_spawnCoinAdd(delta)
 	popup.TextTransparency = 0
 	popup.TextStrokeTransparency = 0
 	popup.BackgroundTransparency = self._coinAddTemplate.BackgroundTransparency
-	popup.Text = string.format("%s$%s", delta >= 0 and "+" or "-", FormatUtil.FormatWithCommas(math.abs(delta)))
+	popup.Text = string.format("%s$%s", delta >= 0 and "+" or "-", FormatUtil.FormatWithCommas(math.abs(delta), 1))
 	popup.Parent = self._coinAddTemplate.Parent
 
 	local finalPosition = self._coinAddTemplate.Position
@@ -234,8 +234,8 @@ function CoinDisplayController:_onCoinChanged(payload)
 		return
 	end
 
-	local total = math.max(0, math.floor(tonumber(payload.total) or 0))
-	local delta = math.floor(tonumber(payload.delta) or 0)
+	local total = FormatUtil.CeilNonNegative(payload.total)
+	local delta = tonumber(payload.delta) or 0
 
 	if delta == 0 and self._displayValue == 0 then
 		self._displayValue = total
@@ -269,4 +269,5 @@ function CoinDisplayController:Start()
 end
 
 return CoinDisplayController
+
 

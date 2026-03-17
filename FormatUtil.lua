@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: FormatUtil
 脚本文件: FormatUtil.lua
 脚本类型: ModuleScript
@@ -27,28 +27,77 @@ local function trimTrailingZeros(numberText)
     return trimmed
 end
 
-function FormatUtil.FormatWithCommas(value)
+function FormatUtil.RoundToDecimals(value, decimals)
+    local numericValue = tonumber(value) or 0
+    local places = math.max(0, math.floor(tonumber(decimals) or 0))
+    if places <= 0 then
+        if numericValue >= 0 then
+            return math.floor(numericValue + 0.5)
+        end
+
+        return math.ceil(numericValue - 0.5)
+    end
+
+    local factor = 10 ^ places
+    if numericValue >= 0 then
+        return math.floor((numericValue * factor) + 0.5) / factor
+    end
+
+    return math.ceil((numericValue * factor) - 0.5) / factor
+end
+
+function FormatUtil.CeilNonNegative(value)
+    return math.max(0, math.ceil((tonumber(value) or 0) - 1e-9))
+end
+
+function FormatUtil.FormatWithCommas(value, maxDecimals)
     local numericValue = tonumber(value) or 0
     local sign = numericValue < 0 and "-" or ""
-    local absoluteValue = math.floor(math.abs(numericValue))
+    local decimals = math.max(0, math.floor(tonumber(maxDecimals) or 0))
+    local absoluteValue = math.abs(numericValue)
+    local wholeText = nil
+    local fractionText = ""
 
-    local raw = tostring(absoluteValue)
-    local formatted = raw:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if decimals > 0 then
+        local roundedValue = math.abs(FormatUtil.RoundToDecimals(numericValue, decimals))
+        local formatString = string.format("%%.%df", decimals)
+        local roundedText = string.format(formatString, roundedValue)
+        local parsedWholeText, parsedFractionText = string.match(roundedText, "^(%d+)%.(%d+)$")
+        if parsedWholeText then
+            wholeText = parsedWholeText
+            fractionText = string.gsub(parsedFractionText or "", "0+$", "")
+            if fractionText ~= "" then
+                fractionText = "." .. fractionText
+            end
+        else
+            wholeText = roundedText
+        end
+    else
+        wholeText = tostring(math.floor(absoluteValue))
+    end
+
+    local formatted = wholeText:reverse():gsub("(%d%d%d)", "%1,"):reverse()
     if formatted:sub(1, 1) == "," then
         formatted = formatted:sub(2)
     end
 
-    return sign .. formatted
+    return sign .. formatted .. fractionText
 end
 
-function FormatUtil.FormatCompactNumber(value)
+function FormatUtil.FormatCompactNumber(value, maxDecimals)
     local numericValue = math.max(0, tonumber(value) or 0)
+    local decimalsOverride = tonumber(maxDecimals)
     if numericValue < 1000 then
         if math.abs(numericValue - math.floor(numericValue)) < 0.001 then
             return tostring(math.floor(numericValue))
         end
 
-        local formatString = numericValue >= 100 and "%.0f" or (numericValue >= 10 and "%.1f" or "%.2f")
+        local decimals = numericValue >= 100 and 0 or (numericValue >= 10 and 1 or 2)
+        if decimalsOverride ~= nil then
+            decimals = math.max(0, math.floor(decimalsOverride))
+        end
+
+        local formatString = string.format("%%.%df", decimals)
         return trimTrailingZeros(string.format(formatString, numericValue))
     end
 
@@ -62,6 +111,10 @@ function FormatUtil.FormatCompactNumber(value)
                 decimals = 1
             end
 
+            if decimalsOverride ~= nil then
+                decimals = math.max(0, math.floor(decimalsOverride))
+            end
+
             local formatString = string.format("%%.%df", decimals)
             return trimTrailingZeros(string.format(formatString, scaled)) .. unit.Suffix
         end
@@ -70,12 +123,12 @@ function FormatUtil.FormatCompactNumber(value)
     return tostring(math.floor(numericValue))
 end
 
-function FormatUtil.FormatCompactCurrency(value)
-    return "$" .. FormatUtil.FormatCompactNumber(value)
+function FormatUtil.FormatCompactCurrency(value, maxDecimals)
+    return "$" .. FormatUtil.FormatCompactNumber(value, maxDecimals)
 end
 
-function FormatUtil.FormatCompactCurrencyPerSecond(value)
-    return FormatUtil.FormatCompactCurrency(value) .. "/S"
+function FormatUtil.FormatCompactCurrencyPerSecond(value, maxDecimals)
+    return FormatUtil.FormatCompactCurrency(value, maxDecimals) .. "/S"
 end
 
 function FormatUtil.FormatDurationDaysHoursMinutes(totalSeconds)

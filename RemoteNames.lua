@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: RemoteNames
 脚本文件: RemoteNames.lua
 脚本类型: ModuleScript
@@ -34,6 +34,8 @@ local RemoteNames = {
     Brainrot = {
         BrainrotStateSync = "BrainrotStateSync",
         RequestBrainrotStateSync = "RequestBrainrotStateSync",
+        RequestBrainrotUpgrade = "RequestBrainrotUpgrade",
+        BrainrotUpgradeFeedback = "BrainrotUpgradeFeedback",
     },
 }
 

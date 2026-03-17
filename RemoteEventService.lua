@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: RemoteEventService
 脚本文件: RemoteEventService.lua
 脚本类型: ModuleScript
@@ -81,6 +81,8 @@ function RemoteEventService:Init()
     self._events.RequestSpecialEventStateSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestSpecialEventStateSync)
     self._events.BrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotStateSync)
     self._events.RequestBrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotStateSync)
+    self._events.RequestBrainrotUpgrade = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotUpgrade)
+    self._events.BrainrotUpgradeFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotUpgradeFeedback)
 end
 
 function RemoteEventService:GetEvent(eventKey)

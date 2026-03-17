@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: MainClient
 脚本文件: MainClient.client.lua
 脚本类型: LocalScript
@@ -57,6 +57,7 @@ local ClaimFeedbackController = requireControllerModule("ClaimFeedbackController
 local ModalController = requireControllerModule("ModalController")
 local RebirthController = requireControllerModule("RebirthController")
 local IndexController = requireControllerModule("IndexController")
+local BrainrotUpgradeController = requireControllerModule("BrainrotUpgradeController")
 local GlobalLeaderboardController = requireControllerModule("GlobalLeaderboardController")
 local SpecialEventController = requireControllerModule("SpecialEventController")
 local RemoteNames = requireSharedModule("RemoteNames")
@@ -82,6 +83,9 @@ claimFeedbackController:Start()
 local modalController = ModalController.new()
 local indexController = IndexController.new(modalController)
 indexController:Start()
+
+local brainrotUpgradeController = BrainrotUpgradeController.new()
+brainrotUpgradeController:Start()
 
 local rebirthController = RebirthController.new(modalController)
 rebirthController:Start()

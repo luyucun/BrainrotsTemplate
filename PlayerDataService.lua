@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: PlayerDataService
 脚本文件: PlayerDataService.lua
 脚本类型: ModuleScript
@@ -72,6 +72,11 @@ local function waitForRetry(attempt)
     task.wait(GameConfig.DATASTORE.RetryDelay * attempt)
 end
 
+local function roundCurrencyValue(value)
+    local numericValue = math.max(0, tonumber(value) or 0)
+    return math.floor((numericValue * 10000) + 0.5) / 10000
+end
+
 local function ensureMetaTable(playerData)
     if type(playerData) ~= "table" then
         return nil
@@ -88,6 +93,21 @@ local function ensureMetaTable(playerData)
     meta.LastLogoutAt = math.max(0, math.floor(tonumber(meta.LastLogoutAt) or 0))
     meta.LastSaveAt = math.max(0, math.floor(tonumber(meta.LastSaveAt) or 0))
     return meta
+end
+
+local function ensureCurrencyState(playerData)
+    if type(playerData) ~= "table" then
+        return nil
+    end
+
+    local currency = playerData.Currency
+    if type(currency) ~= "table" then
+        currency = {}
+        playerData.Currency = currency
+    end
+
+    currency.Coins = roundCurrencyValue(currency.Coins)
+    return currency
 end
 
 local function ensureLeaderboardState(playerData)
@@ -188,6 +208,7 @@ function PlayerDataService:LoadPlayerData(player)
     end
 
     mergeDefaults(loadedData, GameConfig.DEFAULT_PLAYER_DATA)
+    ensureCurrencyState(loadedData)
     local meta = ensureMetaTable(loadedData)
     local leaderboardState = ensureLeaderboardState(loadedData)
     if meta.CreatedAt <= 0 then
@@ -215,7 +236,12 @@ function PlayerDataService:GetCoins(player)
         return 0
     end
 
-    return math.floor(tonumber(data.Currency.Coins) or 0)
+    local currency = ensureCurrencyState(data)
+    if not currency then
+        return 0
+    end
+
+    return math.max(0, tonumber(currency.Coins) or 0)
 end
 
 function PlayerDataService:SetCoins(player, amount)
@@ -224,16 +250,21 @@ function PlayerDataService:SetCoins(player, amount)
         return nil, nil
     end
 
-    local previous = math.floor(tonumber(data.Currency.Coins) or 0)
-    local nextValue = math.max(0, math.floor(tonumber(amount) or 0))
-    data.Currency.Coins = nextValue
+    local currency = ensureCurrencyState(data)
+    if not currency then
+        return nil, nil
+    end
+
+    local previous = roundCurrencyValue(currency.Coins)
+    local nextValue = roundCurrencyValue(amount)
+    currency.Coins = nextValue
 
     return previous, nextValue
 end
 
 function PlayerDataService:ChangeCoins(player, delta)
     local current = self:GetCoins(player)
-    return self:SetCoins(player, current + delta)
+    return self:SetCoins(player, current + (tonumber(delta) or 0))
 end
 
 function PlayerDataService:SetHomeId(player, homeId)
@@ -444,3 +475,5 @@ function PlayerDataService:OnPlayerRemoving(player)
 end
 
 return PlayerDataService
+
+

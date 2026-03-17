@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: IndexController
 脚本文件: IndexController.lua
 脚本类型: ModuleScript
@@ -1281,7 +1281,7 @@ function IndexController:_renderEntries()
         end
 
         if bgNode then
-            self:_applyDisplayGradient(bgNode, qualityGradientPath, "Quality:" .. tostring(qualityId), false)
+            self:_clearManagedDisplayNodes(bgNode)
         end
 
         itemClone.Parent = self._entryScrollingFrame

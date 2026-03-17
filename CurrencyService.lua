@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: CurrencyService
 脚本文件: CurrencyService.lua
 脚本类型: ModuleScript
@@ -95,13 +95,13 @@ end
 
 function CurrencyService:_updateCashStat(player, totalCoins)
     local _leaderstats, cashValue = self:_ensureLeaderstats(player)
-    local safeCoins = math.max(0, math.floor(tonumber(totalCoins) or 0))
+    local safeCoins = math.max(0, tonumber(totalCoins) or 0)
     if cashValue then
         cashValue.Value = formatCompactNumber(safeCoins)
     end
 
     if player then
-        player:SetAttribute("CashRaw", safeCoins)
+        player:SetAttribute("CashRaw", math.max(0, math.floor(safeCoins)))
     end
 end
 
@@ -127,7 +127,7 @@ function CurrencyService:PushCoinState(player, delta, reason)
     if self._coinChangedEvent then
         self._coinChangedEvent:FireClient(player, {
             total = totalCoins,
-            delta = math.floor(tonumber(delta) or 0),
+            delta = tonumber(delta) or 0,
             reason = tostring(reason or "Unknown"),
             timestamp = os.clock(),
         })
@@ -146,8 +146,8 @@ function CurrencyService:OnPlayerRemoving(player)
 end
 
 function CurrencyService:AddCoins(player, amount, reason)
-    local numericAmount = math.floor(tonumber(amount) or 0)
-    if numericAmount == 0 then
+    local numericAmount = tonumber(amount) or 0
+    if math.abs(numericAmount) < 0.0001 then
         return false, self._playerDataService:GetCoins(player)
     end
 
@@ -157,7 +157,7 @@ function CurrencyService:AddCoins(player, amount, reason)
     end
 
     local delta = nextValue - previous
-    if delta ~= 0 then
+    if math.abs(delta) >= 0.0001 then
         self:PushCoinState(player, delta, reason or "AddCoins")
     end
 
@@ -176,3 +176,5 @@ function CurrencyService:SetCoins(player, amount, reason)
 end
 
 return CurrencyService
+
+
