@@ -417,6 +417,7 @@ function IndexController.new(modalController)
     self._rarityOrder = rarityOrder
     self._entriesByRarity = entriesByRarity
     self._discoverableCount = #BrainrotConfig.Entries
+    self._canvasRefreshSerialByFrame = setmetatable({}, { __mode = "k" })
     self._state = {
         unlockedBrainrotIdMap = {},
         discoveredCount = 0,
@@ -1105,40 +1106,60 @@ local function udimToPixels(udimValue, axisSize)
     return math.max(0, math.floor((udimValue.Scale * axisSize) + udimValue.Offset + 0.5))
 end
 
-function IndexController:_updateCanvasSize(scrollingFrame)
+function IndexController:_applyCanvasSizeNow(scrollingFrame)
     if not scrollingFrame then
         return
     end
 
-    task.defer(function()
-        if not (scrollingFrame and scrollingFrame.Parent) then
+    if not (scrollingFrame and scrollingFrame.Parent) then
+        return
+    end
+
+    local layout = self:_stabilizeScrollingLayout(scrollingFrame)
+    if not layout then
+        return
+    end
+
+    local contentSize = layout.AbsoluteContentSize
+    local absoluteSize = scrollingFrame.AbsoluteSize
+    local paddingNode = scrollingFrame:FindFirstChildWhichIsA("UIPadding")
+    local horizontalPadding = 0
+    local verticalPadding = 0
+    if paddingNode then
+        horizontalPadding = udimToPixels(paddingNode.PaddingLeft, absoluteSize.X)
+            + udimToPixels(paddingNode.PaddingRight, absoluteSize.X)
+        verticalPadding = udimToPixels(paddingNode.PaddingTop, absoluteSize.Y)
+            + udimToPixels(paddingNode.PaddingBottom, absoluteSize.Y)
+    end
+
+    local bottomSafeInset = 18
+    scrollingFrame.CanvasSize = UDim2.new(
+        0,
+        contentSize.X + horizontalPadding,
+        0,
+        contentSize.Y + verticalPadding + bottomSafeInset
+    )
+end
+
+function IndexController:_updateCanvasSize(scrollingFrame)
+    self:_applyCanvasSizeNow(scrollingFrame)
+end
+
+function IndexController:_scheduleCanvasRefresh(scrollingFrame, delaySeconds)
+    if not scrollingFrame then
+        return
+    end
+
+    local refreshDelay = math.max(0, tonumber(delaySeconds) or 0)
+    local refreshSerial = (tonumber(self._canvasRefreshSerialByFrame[scrollingFrame]) or 0) + 1
+    self._canvasRefreshSerialByFrame[scrollingFrame] = refreshSerial
+
+    task.delay(refreshDelay, function()
+        if self._canvasRefreshSerialByFrame[scrollingFrame] ~= refreshSerial then
             return
         end
 
-        local layout = self:_stabilizeScrollingLayout(scrollingFrame)
-        if not layout then
-            return
-        end
-
-        local contentSize = layout.AbsoluteContentSize
-        local absoluteSize = scrollingFrame.AbsoluteSize
-        local paddingNode = scrollingFrame:FindFirstChildWhichIsA("UIPadding")
-        local horizontalPadding = 0
-        local verticalPadding = 0
-        if paddingNode then
-            horizontalPadding = udimToPixels(paddingNode.PaddingLeft, absoluteSize.X)
-                + udimToPixels(paddingNode.PaddingRight, absoluteSize.X)
-            verticalPadding = udimToPixels(paddingNode.PaddingTop, absoluteSize.Y)
-                + udimToPixels(paddingNode.PaddingBottom, absoluteSize.Y)
-        end
-
-        local bottomSafeInset = 18
-        scrollingFrame.CanvasSize = UDim2.new(
-            0,
-            contentSize.X + horizontalPadding,
-            0,
-            contentSize.Y + verticalPadding + bottomSafeInset
-        )
+        self:_applyCanvasSizeNow(scrollingFrame)
     end)
 end
 
@@ -1267,6 +1288,17 @@ function IndexController:_renderEntries()
     end
 
     self:_updateCanvasSize(self._entryScrollingFrame)
+
+    local isIndexOpen = false
+    if self._modalController then
+        isIndexOpen = self._modalController:IsModalOpen("Index")
+    elseif self._indexRoot and self._indexRoot:IsA("GuiObject") then
+        isIndexOpen = self._indexRoot.Visible == true
+    end
+
+    if isIndexOpen then
+        self:_scheduleCanvasRefresh(self._entryScrollingFrame, 0.05)
+    end
 end
 
 function IndexController:_renderAll()
@@ -1290,8 +1322,18 @@ function IndexController:OpenIndex()
         self._modalController:OpenModal("Index", self._indexRoot, {
             HiddenNodes = self:_getHiddenNodesForModal(),
         })
+
+        local uiConfig = GameConfig.UI or {}
+        local refreshDelay = math.max(
+            0.05,
+            (tonumber(uiConfig.ModalOpenOvershootDuration) or 0.18)
+                + (tonumber(uiConfig.ModalOpenSettleDuration) or 0.12)
+                + 0.05
+        )
+        self:_scheduleCanvasRefresh(self._entryScrollingFrame, refreshDelay)
     elseif self._indexRoot:IsA("GuiObject") then
         self._indexRoot.Visible = true
+        self:_scheduleCanvasRefresh(self._entryScrollingFrame, 0.05)
     end
 end
 
@@ -1352,7 +1394,4 @@ function IndexController:Start()
 end
 
 return IndexController
-
-
-
 
