@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: GMCommandService
 脚本文件: GMCommandService.lua
 脚本类型: ModuleScript
@@ -35,6 +35,7 @@ local BrainrotConfig = requireSharedModule("BrainrotConfig")
 local GMCommandService = {}
 GMCommandService._currencyService = nil
 GMCommandService._brainrotService = nil
+GMCommandService._homeExpansionService = nil
 GMCommandService._playerDataService = nil
 GMCommandService._homeService = nil
 GMCommandService._weaponService = nil
@@ -69,6 +70,7 @@ function GMCommandService:Init(dependencies, maybeBrainrotService)
     if type(dependencies) == "table" and (dependencies.CurrencyService or dependencies.BrainrotService) then
         self._currencyService = dependencies.CurrencyService
         self._brainrotService = dependencies.BrainrotService
+        self._homeExpansionService = dependencies.HomeExpansionService
         self._playerDataService = dependencies.PlayerDataService
         self._homeService = dependencies.HomeService
         self._weaponService = dependencies.WeaponService
@@ -196,6 +198,9 @@ function GMCommandService:_handleCommand(player, message)
         if self._brainrotService then
             self._brainrotService:OnPlayerRemoving(player)
         end
+        if self._homeExpansionService then
+            self._homeExpansionService:OnPlayerRemoving(player, assignedHome)
+        end
         if self._rebirthService then
             self._rebirthService:OnPlayerRemoving(player)
         end
@@ -220,6 +225,9 @@ function GMCommandService:_handleCommand(player, message)
 
         if self._rebirthService then
             self._rebirthService:OnPlayerReady(player)
+        end
+        if self._homeExpansionService then
+            self._homeExpansionService:OnPlayerReady(player, assignedHome)
         end
 
         if self._brainrotService then

@@ -103,11 +103,66 @@ local function resolveHorizontalDirection(attackerRootPart, targetRootPart)
     return horizontal.Unit
 end
 
+local function resolveSwingAnimationId()
+    local weaponConfig = getWeaponConfig()
+    local animationId = weaponConfig.SwingAttackAnimationId
+
+    if type(animationId) == "number" then
+        animationId = tostring(math.floor(animationId))
+    end
+
+    if type(animationId) ~= "string" then
+        return "rbxassetid://79436155132033"
+    end
+
+    local trimmed = string.gsub(animationId, "^%s*(.-)%s*$", "%1")
+    if trimmed == "" then
+        return "rbxassetid://79436155132033"
+    end
+
+    if string.match(trimmed, "^rbxassetid://%d+$") then
+        return trimmed
+    end
+
+    if string.match(trimmed, "^%d+$") then
+        return "rbxassetid://" .. trimmed
+    end
+
+    return "rbxassetid://79436155132033"
+end
+
 local function playDefaultSwingAnimation(tool)
     if not tool then
         return
     end
 
+    local character = tool.Parent
+    if character and character:IsA("Model") then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if not animator then
+                animator = Instance.new("Animator")
+                animator.Parent = humanoid
+            end
+
+            local animation = Instance.new("Animation")
+            animation.AnimationId = resolveSwingAnimationId()
+
+            local ok, track = pcall(function()
+                return animator:LoadAnimation(animation)
+            end)
+            animation:Destroy()
+
+            if ok and track then
+                track.Priority = Enum.AnimationPriority.Action
+                track:Play(0.05, 1, 1)
+                return
+            end
+        end
+    end
+
+    -- 回退兼容：如果自定义动画加载失败，则使用 Roblox 默认 Slash 标记
     local marker = Instance.new("StringValue")
     marker.Name = "toolanim"
     marker.Value = "Slash"

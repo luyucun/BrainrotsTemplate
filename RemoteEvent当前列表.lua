@@ -1,13 +1,16 @@
-﻿--[[
+--[[
 =====================================================
-RemoteEvent 当前列表（V2.5）
+RemoteEvent 当前列表（V2.7）
 =====================================================
 
-文档更新时间: 2026-03-17
+文档更新时间: 2026-03-19
 说明:
 - V2.3 全局排行榜未新增 RemoteEvent。
 - V2.4.1 特殊事件新增 2 个 RemoteEvent，用于同步客户端本地表现。
 - V2.5 脑红升级新增 2 个 RemoteEvent，用于客户端点击升级与本地音效反馈。
+- V2.6 脑红出售新增 2 个 RemoteEvent，用于客户端出售单个/全部脑红与本地成功音效反馈。
+- V2.7 家园拓展新增 2 个 RemoteEvent，用于客户端请求购买下一个拓展格子与本地失败音效反馈。
+- V2.7 Studio 调试面板新增 2 个 RemoteEvent，仅 Studio 环境下用于测试发放脑红。
 - /event <事件Id> 为 GM 聊天命令，由服务端直接处理。
 
 一、事件树
@@ -29,6 +32,8 @@ ReplicatedStorage
     - RequestRebirthStateSync
     - RequestRebirth
     - RebirthFeedback
+    - RequestHomeExpansion [V2.7]
+    - HomeExpansionFeedback [V2.7]
     - SpecialEventStateSync
     - RequestSpecialEventStateSync
   - BrainrotEvents
@@ -36,6 +41,10 @@ ReplicatedStorage
     - RequestBrainrotStateSync
     - RequestBrainrotUpgrade
     - BrainrotUpgradeFeedback
+    - RequestBrainrotSell  [V2.6]
+    - BrainrotSellFeedback [V2.6]
+    - RequestStudioBrainrotGrant [Studio Only]
+    - StudioBrainrotGrantFeedback [Studio Only]
 
 二、事件详情
 1. CoinChanged（S -> C）
@@ -110,9 +119,10 @@ ReplicatedStorage
 
 17. BrainrotStateSync（S -> C）
 - 参数: inventory / placed / equippedInstanceId / unlockedBrainrotIds / discoveredCount / discoverableCount / totalProductionBaseSpeed / totalProductionMultiplier / totalProductionSpeed
-- inventory[i]: instanceId / brainrotId / name / icon / quality / qualityName / rarity / rarityName / level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost / modelPath
+- inventory[i]: instanceId / brainrotId / name / icon / quality / qualityName / rarity / rarityName / level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost / sellPrice / modelPath
 - placed[i]: positionKey / instanceId / brainrotId / name / level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost / quality / rarity
 - 用途: 同步脑红背包、放置状态、图鉴解锁历史，以及当前总产速汇总信息。
+- 备注: V2.6 起 inventory[i] 新增 sellPrice，供出售界面直接渲染单个脑红售价。
 
 18. RequestBrainrotStateSync（C -> S）
 - 参数: 无
@@ -122,11 +132,49 @@ ReplicatedStorage
 - 参数: positionKey
 - 用途: 请求升级指定 Position 上当前已放置的脑红。
 - 校验: 服务端校验位置是否存在脑红、金币是否足够、请求频率是否合法。
+- 版本: V2.5 新增。
 
 20. BrainrotUpgradeFeedback（S -> C）
 - 参数: status / positionKey / currentLevel / nextLevel / upgradeCost / currentCoins / timestamp
 - 用途: 返回脑红升级结果，供客户端播放成功/失败音效。
 - 状态值: Success / NotEnoughCoins / NoBrainrot / BrainrotNotFound / CurrencyFailed
+- 版本: V2.5 新增。
+
+21. RequestBrainrotSell（C -> S）
+- 参数: payload.instanceId 或 payload.sellAll
+- 用途: 请求出售单个脑红，或一键出售全部背包脑红。
+- 校验: 服务端重新校验实例是否真实存在于玩家背包、售价是否有效、请求频率是否合法。
+- 版本: V2.6 新增。
+
+22. BrainrotSellFeedback（S -> C）
+- 参数: status / soldCount / soldValue / remainingInventoryCount / mode / currentCoins / soldInstanceId / timestamp
+- 用途: 返回出售结果，供客户端播放出售成功音效，并在背包为空时自动关闭出售面板。
+- 状态值: Success / InvalidInstanceId / BrainrotNotFound / BrainrotConfigMissing / SellValueInvalid / InventoryEmpty / CurrencyFailed
+- 版本: V2.6 新增。
+
+23. RequestHomeExpansion（C -> S）
+- 参数: 无
+- 用途: 请求购买“下一个”家园拓展格子。
+- 校验: 服务端重新校验当前已解锁数量、下一档价格、金币余额与请求频率，不接受客户端指定楼层、位置或价格。
+- 版本: V2.7 新增。
+
+24. HomeExpansionFeedback（S -> C）
+- 参数: status / unlockedExpansionCount / nextUnlockPrice / currentCoins / timestamp
+- 用途: 返回家园拓展购买结果，供客户端播放失败音效。
+- 状态值: Success / MissingHome / AlreadyMax / NotEnoughCoins / CurrencyFailed
+- 版本: V2.7 新增。
+
+25. RequestStudioBrainrotGrant（C -> S）
+- 参数: payload.brainrotId
+- 用途: 仅供 Studio 环境下的本地调试面板请求给当前玩家发放 1 个指定脑红。
+- 校验: 服务端必须校验当前运行环境为 Studio，且 brainrotId 必须真实存在于 BrainrotConfig.ById。
+- 版本: V2.7 开发调试新增。
+
+26. StudioBrainrotGrantFeedback（S -> C）
+- 参数: status / brainrotId / brainrotName / grantedCount / timestamp
+- 用途: 返回 Studio 调试发放结果，供本地测试面板显示成功或失败提示。
+- 状态值: Success / NotStudio / InvalidBrainrotId / BrainrotNotFound / PlayerDataNotReady / GrantFailed
+- 版本: V2.7 开发调试新增。
 
 三、行为补充说明
 1. Index 界面继续复用 BrainrotStateSync，不额外新增 Index 专属 RemoteEvent。
@@ -136,7 +184,12 @@ ReplicatedStorage
 5. TotalPlaySeconds 为永久数据，其更新逻辑不依赖新增 RemoteEvent。
 6. V2.4.1 起，特殊事件改为“服务端调度 + 客户端本地表现”。
 7. V2.5 起，脑红升级台 BrandX 的文本内容由服务端直接刷新，箭头动画与音效由客户端本地负责。
-8. 脑红升级成功后，服务端会同时扣金币、提升等级、刷新 Brand UI、刷新 BrainrotStateSync，并更新玩家总产速 Attribute。
+8. V2.6 的出售界面打开逻辑不新增专属 RemoteEvent：
+- 顶部 Sell 按钮继续复用 RequestQuickTeleport 处理传送。
+- 打开/关闭 SellBrainrots 面板、Shop02/PrisonerTouch 触碰检测，全部在客户端本地处理。
+9. 脑红出售成功后，服务端会先加金币，再刷新 BrainrotStateSync；客户端仅根据 BrainrotSellFeedback 播放本地音效和自动关闭面板。
+10. V2.7 的 BaseUpgrade 世界 UI 文案由服务端直接刷新；客户端只发送 RequestHomeExpansion，并根据 HomeExpansionFeedback 做本地失败反馈。
+11. Studio 调试面板只允许在 Studio 环境下使用；即便客户端错误触发，请求也会被服务端以 NotStudio 拒绝。
 
 四、维护约束
 1. 当 RemoteEvent 发生变化时，必须同步更新：
@@ -149,8 +202,12 @@ ReplicatedStorage
 3. ClaimCashFeedback 必须继续保持 FireClient 给触发者本人，不可广播。
 4. 特殊事件当前只同步“事件状态”，不直接同步具体本地实例；客户端负责根据状态自己生成和移除本地表现。
 5. RequestBrainrotUpgrade 不能直接相信客户端提交的等级、费用或金币，服务端必须重新计算。
+6. RequestBrainrotSell 不能直接相信客户端提交的售价、脑红等级、脑红配置或金币结果，服务端必须重新计算。
+7. RequestHomeExpansion 不能直接相信客户端提交的楼层、价格、位置或已解锁数量，服务端必须只按下一档配置顺序处理。
+8. RequestStudioBrainrotGrant 只允许用于 Studio 调试，不可作为正式玩法逻辑入口。
 
 =====================================================
 列表结束
 =====================================================
 ]]
+

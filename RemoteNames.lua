@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: RemoteNames
 脚本文件: RemoteNames.lua
 脚本类型: ModuleScript
@@ -28,6 +28,8 @@ local RemoteNames = {
         RequestRebirthStateSync = "RequestRebirthStateSync",
         RequestRebirth = "RequestRebirth",
         RebirthFeedback = "RebirthFeedback",
+        RequestHomeExpansion = "RequestHomeExpansion",
+        HomeExpansionFeedback = "HomeExpansionFeedback",
         SpecialEventStateSync = "SpecialEventStateSync",
         RequestSpecialEventStateSync = "RequestSpecialEventStateSync",
     },
@@ -36,7 +38,12 @@ local RemoteNames = {
         RequestBrainrotStateSync = "RequestBrainrotStateSync",
         RequestBrainrotUpgrade = "RequestBrainrotUpgrade",
         BrainrotUpgradeFeedback = "BrainrotUpgradeFeedback",
+        RequestBrainrotSell = "RequestBrainrotSell", -- V2.6: C -> S，请求出售单个/全部背包脑红
+        BrainrotSellFeedback = "BrainrotSellFeedback", -- V2.6: S -> C，返回出售结果与剩余背包数量
+        RequestStudioBrainrotGrant = "RequestStudioBrainrotGrant", -- Studio Only: C -> S，请求测试发放 1 个指定脑红
+        StudioBrainrotGrantFeedback = "StudioBrainrotGrantFeedback", -- Studio Only: S -> C，返回测试发放结果
     },
 }
 
 return RemoteNames
+

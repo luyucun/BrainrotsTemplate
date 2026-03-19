@@ -64,20 +64,20 @@ BrainrotDisplayConfig.Rarity = {
         GradientPath = "StarterGui/Gradients/Animation/Rarity/Diamond",
     },
     [4] = {
-        Name = "Lava",
-        GradientPath = "StarterGui/Gradients/Animation/Rarity/Lava",
-    },
-    [5] = {
         Name = "Galaxy",
         GradientPath = "StarterGui/Gradients/Animation/Rarity/Galaxy",
     },
-    [6] = {
-        Name = "Hacker",
-        GradientPath = "StarterGui/Gradients/Animation/Rarity/Hacker",
+    [5] = {
+        Name = "Lava",
+        GradientPath = "StarterGui/Gradients/Animation/Rarity/Lava",
     },
-    [7] = {
+    [6] = {
         Name = "Rainbow",
         GradientPath = "StarterGui/Gradients/Animation/Rarity/Rainbow",
+    },
+    [7] = {
+        Name = "Hacker",
+        GradientPath = "StarterGui/Gradients/Animation/Rarity/Hacker",
     },
 }
 

@@ -63,6 +63,57 @@ local function clampNonNegativeNumber(value)
     return math.max(0, tonumber(value) or 0)
 end
 
+local function roundProductionValue(value)
+    local precision = math.max(0, math.floor(tonumber(((GameConfig.BRAINROT or {}).UpgradeInternalPrecisionDecimals)) or 4))
+    return math.max(0, FormatUtil.RoundToDecimals(value, precision))
+end
+
+local function getProductionOrderedStoreScale()
+    return 1
+end
+
+local function normalizeBoardRuntimeScore(boardKey, score)
+    if boardKey == BOARD_KEYS.Playtime then
+        return math.max(0, math.floor(tonumber(score) or 0))
+    end
+
+    return math.max(0, tonumber(score) or 0)
+end
+
+local function encodeBoardScoreForStore(boardKey, score)
+    local normalizedScore = normalizeBoardRuntimeScore(boardKey, score)
+    if boardKey == BOARD_KEYS.Production then
+        return math.max(0, math.floor((normalizedScore * getProductionOrderedStoreScale()) + 0.5))
+    end
+
+    return normalizedScore
+end
+
+local function decodeBoardScoreFromStore(boardKey, storedScore)
+    local normalizedScore = math.max(0, tonumber(storedScore) or 0)
+    if boardKey == BOARD_KEYS.Production then
+        return normalizedScore / getProductionOrderedStoreScale()
+    end
+
+    return math.max(0, math.floor(normalizedScore))
+end
+
+local function getBaseBrainrotLevel()
+    return math.max(1, math.floor(tonumber((GameConfig.BRAINROT or {}).BaseLevel) or 1))
+end
+
+local function normalizeBrainrotLevel(level)
+    return math.max(getBaseBrainrotLevel(), math.floor(tonumber(level) or getBaseBrainrotLevel()))
+end
+
+local function getLeveledBrainrotProductionSpeed(brainrotDefinition, level)
+    local baseSpeed = clampNonNegativeNumber(brainrotDefinition and brainrotDefinition.CoinPerSecond)
+    local normalizedLevel = normalizeBrainrotLevel(level)
+    local exponent = math.max(0, normalizedLevel - getBaseBrainrotLevel())
+    local multiplier = math.max(0, tonumber((GameConfig.BRAINROT or {}).UpgradeProductionMultiplier) or 1.25)
+    return roundProductionValue(baseSpeed * (multiplier ^ exponent))
+end
+
 local function findFirstDescendantByNames(root, names)
     if not root then
         return nil
@@ -277,7 +328,8 @@ function GlobalLeaderboardService:_computeCurrentProductionScore(player)
             local brainrotId = math.floor(tonumber(type(placedData) == "table" and placedData.BrainrotId or 0) or 0)
             local definition = BrainrotConfig.ById[brainrotId]
             if definition then
-                baseSpeed += clampNonNegativeNumber(definition.CoinPerSecond)
+                local brainrotLevel = type(placedData) == "table" and placedData.Level or nil
+                baseSpeed += getLeveledBrainrotProductionSpeed(definition, brainrotLevel)
             end
         end
     end
@@ -289,7 +341,8 @@ function GlobalLeaderboardService:_computeCurrentProductionScore(player)
 
     local rebirthBonusRate = clampNonNegativeNumber(player:GetAttribute("RebirthBonusRate"))
     local extraBonusRate = clampNonNegativeNumber(player:GetAttribute("ExtraProductionBonusPercent")) / 100
-    return math.max(0, baseSpeed * (1 + friendBonusRate + rebirthBonusRate + extraBonusRate))
+    local totalBonusRate = friendBonusRate + rebirthBonusRate + extraBonusRate
+    return roundProductionValue(baseSpeed * (1 + totalBonusRate))
 end
 
 function GlobalLeaderboardService:_computeCurrentPlaytimeScore(player)
@@ -306,9 +359,8 @@ function GlobalLeaderboardService:_writeScore(boardKey, userId, score)
         return false
     end
 
-    local normalizedScore = boardKey == BOARD_KEYS.Playtime
-        and math.max(0, math.floor(tonumber(score) or 0))
-        or math.max(0, tonumber(score) or 0)
+    local normalizedScore = normalizeBoardRuntimeScore(boardKey, score)
+    local storedScore = encodeBoardScoreForStore(boardKey, normalizedScore)
 
     local memoryScores = self._memoryScoresByBoardKey[boardKey]
     if type(memoryScores) == "table" then
@@ -325,7 +377,7 @@ function GlobalLeaderboardService:_writeScore(boardKey, userId, score)
     end
 
     local success, err = pcall(function()
-        orderedStore:SetAsync(tostring(numericUserId), normalizedScore)
+        orderedStore:SetAsync(tostring(numericUserId), storedScore)
     end)
     if success then
         return true
@@ -378,9 +430,7 @@ function GlobalLeaderboardService:_readOrderedEntries(boardKey)
         if numericUserId > 0 then
             table.insert(entries, {
                 UserId = numericUserId,
-                Score = boardKey == BOARD_KEYS.Playtime
-                    and math.max(0, math.floor(tonumber(rawEntry.value) or 0))
-                    or math.max(0, tonumber(rawEntry.value) or 0),
+                Score = decodeBoardScoreFromStore(boardKey, rawEntry.value),
             })
         end
     end

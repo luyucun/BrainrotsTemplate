@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: MainClient
 脚本文件: MainClient.client.lua
 脚本类型: LocalScript
@@ -58,8 +58,11 @@ local ModalController = requireControllerModule("ModalController")
 local RebirthController = requireControllerModule("RebirthController")
 local IndexController = requireControllerModule("IndexController")
 local BrainrotUpgradeController = requireControllerModule("BrainrotUpgradeController")
+local HomeExpansionController = requireControllerModule("HomeExpansionController")
 local GlobalLeaderboardController = requireControllerModule("GlobalLeaderboardController")
 local SpecialEventController = requireControllerModule("SpecialEventController")
+local BrainrotSellController = requireControllerModule("BrainrotSellController")
+local StudioBrainrotDebugController = requireControllerModule("StudioBrainrotDebugController")
 local RemoteNames = requireSharedModule("RemoteNames")
 
 local coinDisplayController = CoinDisplayController.new()
@@ -87,6 +90,9 @@ indexController:Start()
 local brainrotUpgradeController = BrainrotUpgradeController.new()
 brainrotUpgradeController:Start()
 
+local homeExpansionController = HomeExpansionController.new()
+homeExpansionController:Start()
+
 local rebirthController = RebirthController.new(modalController)
 rebirthController:Start()
 
@@ -96,6 +102,12 @@ globalLeaderboardController:Start()
 local specialEventController = SpecialEventController.new()
 specialEventController:Start()
 
+local brainrotSellController = BrainrotSellController.new(modalController)
+brainrotSellController:Start()
+
+local studioBrainrotDebugController = StudioBrainrotDebugController.new()
+studioBrainrotDebugController:Start()
+
 local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
 local brainrotEvents = eventsRoot:FindFirstChild(RemoteNames.BrainrotEventsFolder)
 if brainrotEvents then
@@ -104,3 +116,4 @@ if brainrotEvents then
         requestBrainrotStateSync:FireServer()
     end
 end
+

@@ -8,6 +8,7 @@ Studio放置路径: ServerScriptService/Services/BrainrotService
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
@@ -46,12 +47,18 @@ BrainrotService._brainrotStateSyncEvent = nil
 BrainrotService._requestBrainrotStateSyncEvent = nil
 BrainrotService._requestBrainrotUpgradeEvent = nil
 BrainrotService._brainrotUpgradeFeedbackEvent = nil
+BrainrotService._requestBrainrotSellEvent = nil
+BrainrotService._brainrotSellFeedbackEvent = nil
+BrainrotService._requestStudioBrainrotGrantEvent = nil
+BrainrotService._studioBrainrotGrantFeedbackEvent = nil
 BrainrotService._claimCashFeedbackEvent = nil
 BrainrotService._promptConnectionsByUserId = {}
+BrainrotService._placedPromptStateByUserId = {}
 BrainrotService._toolConnectionsByUserId = {}
 BrainrotService._claimConnectionsByUserId = {}
 BrainrotService._claimTouchDebounceByUserId = {}
 BrainrotService._upgradeRequestClockByUserId = {}
+BrainrotService._sellRequestClockByUserId = {}
 BrainrotService._claimEffectByUserId = {}
 BrainrotService._claimBounceStateByUserId = {}
 BrainrotService._platformsByUserId = {}
@@ -286,6 +293,7 @@ local function findInventoryIndexByInstanceId(inventory, instanceId)
 	return nil
 end
 
+
 local function parseTrailingIndex(name, prefix)
 	if type(name) ~= "string" or type(prefix) ~= "string" then
 		return nil
@@ -299,6 +307,88 @@ local function parseTrailingIndex(name, prefix)
 	return tonumber(numberText)
 end
 
+local function findHomeExpansionAttribute(instance, attributeName)
+	if not (instance and type(attributeName) == "string" and attributeName ~= "") then
+		return nil, nil
+	end
+
+	local current = instance
+	while current do
+		local attributeValue = current:GetAttribute(attributeName)
+		if attributeValue ~= nil then
+			return attributeValue, current
+		end
+		current = current.Parent
+	end
+
+	return nil, nil
+end
+
+local function getExpandedPositionKeyFromInstance(instance)
+	local expansionConfig = GameConfig.HOME_EXPANSION or {}
+	local positionKeyAttributeName = tostring(expansionConfig.RuntimePositionKeyAttributeName or "HomeExpansionPositionKey")
+	local positionKey = select(1, findHomeExpansionAttribute(instance, positionKeyAttributeName))
+	if type(positionKey) == "string" and positionKey ~= "" then
+		return positionKey
+	end
+
+	return nil
+end
+
+local function buildExpandedPositionKey(localSlotIndex, instance)
+	local resolvedLocalSlotIndex = math.floor(tonumber(localSlotIndex) or 0)
+	if resolvedLocalSlotIndex <= 0 then
+		return nil
+	end
+
+	local expansionConfig = GameConfig.HOME_EXPANSION or {}
+	local floorLevelAttributeName = tostring(expansionConfig.RuntimeFloorLevelAttributeName or "HomeExpansionFloorLevel")
+	local localSlotAttributeName = tostring(expansionConfig.RuntimeLocalSlotIndexAttributeName or "HomeExpansionLocalSlotIndex")
+	local slotsPerFloor = math.max(1, math.floor(tonumber(expansionConfig.SlotsPerFloor) or 10))
+	local resolvedFloorLevel = math.max(1, math.floor(tonumber(select(1, findHomeExpansionAttribute(instance, floorLevelAttributeName)) or 1)))
+	local attributedLocalSlotIndex = math.floor(tonumber(select(1, findHomeExpansionAttribute(instance, localSlotAttributeName)) or resolvedLocalSlotIndex))
+	if attributedLocalSlotIndex > 0 then
+		resolvedLocalSlotIndex = attributedLocalSlotIndex
+	end
+
+	local positionPrefix = tostring((GameConfig.BRAINROT or {}).PositionPrefix or "Position")
+	return string.format("%s%d", positionPrefix, ((resolvedFloorLevel - 1) * slotsPerFloor) + resolvedLocalSlotIndex)
+end
+
+local function resolveHomeSlotPositionKey(instance, namePrefix, fallbackInstance)
+	local directPositionKey = getExpandedPositionKeyFromInstance(instance)
+	if directPositionKey then
+		return directPositionKey
+	end
+
+	if fallbackInstance then
+		local fallbackPositionKey = getExpandedPositionKeyFromInstance(fallbackInstance)
+		if fallbackPositionKey then
+			return fallbackPositionKey
+		end
+	end
+
+	local localSlotIndex = parseTrailingIndex(instance and instance.Name or nil, namePrefix)
+	if not localSlotIndex and fallbackInstance then
+		localSlotIndex = parseTrailingIndex(fallbackInstance.Name, namePrefix)
+	end
+	if not localSlotIndex then
+		return nil
+	end
+
+	return buildExpandedPositionKey(localSlotIndex, fallbackInstance or instance)
+end
+
+local function isHomeSlotUnlocked(instance)
+	local expansionConfig = GameConfig.HOME_EXPANSION or {}
+	local unlockedAttributeName = tostring(expansionConfig.RuntimeUnlockedAttributeName or "HomeExpansionUnlocked")
+	local unlockedValue = select(1, findHomeExpansionAttribute(instance, unlockedAttributeName))
+	if unlockedValue == nil then
+		return true
+	end
+
+	return unlockedValue == true
+end
 local function isPlatformPart(part)
 	if not part:IsA("BasePart") then
 		return false
@@ -392,6 +482,14 @@ local function normalizeBrainrotLevel(level)
 	return math.max(getBaseBrainrotLevel(), math.floor(tonumber(level) or getBaseBrainrotLevel()))
 end
 
+local function buildInventoryItemSnapshot(instanceId, brainrotId, level)
+	return {
+		InstanceId = math.max(0, math.floor(tonumber(instanceId) or 0)),
+		BrainrotId = math.max(0, math.floor(tonumber(brainrotId) or 0)),
+		Level = normalizeBrainrotLevel(level),
+	}
+end
+
 local function getBrainrotBaseProductionSpeed(brainrotDefinition)
 	return math.max(0, tonumber(brainrotDefinition and brainrotDefinition.CoinPerSecond) or 0)
 end
@@ -412,6 +510,12 @@ local function getBrainrotUpgradeCost(brainrotDefinition, level)
 	return roundBrainrotEconomicValue(baseSpeed * (multiplier ^ exponent))
 end
 
+local function getBrainrotSellPrice(brainrotDefinition)
+	local baseSpeed = getBrainrotBaseProductionSpeed(brainrotDefinition)
+	local multiplier = math.max(0, tonumber((GameConfig.BRAINROT or {}).SellPriceMultiplier) or 15)
+	return roundBrainrotEconomicValue(baseSpeed * multiplier)
+end
+
 local function formatBrainrotNumber(value)
 	return FormatUtil.FormatWithCommas(roundBrainrotEconomicValue(value), getBrainrotDisplayDecimals())
 end
@@ -420,16 +524,20 @@ local function formatBrainrotCurrency(value)
 	return "$" .. formatBrainrotNumber(value)
 end
 
+local function formatBrainrotCompactCurrency(value)
+	return FormatUtil.FormatCompactCurrency(roundBrainrotEconomicValue(value), getBrainrotDisplayDecimals())
+end
+
 local function formatBrainrotSpeed(value)
 	return string.format("$%s/S", formatBrainrotNumber(value))
 end
 
 local function formatCurrentGoldText(value)
-	return formatBrainrotCurrency(value)
+	return formatBrainrotCompactCurrency(value)
 end
 
 local function formatOfflineGoldText(value)
-	return "IdleEarnings " .. formatBrainrotCurrency(value)
+	return "IdleEarnings " .. formatBrainrotCompactCurrency(value)
 end
 
 local function normalizeAnimationId(animationId)
@@ -761,14 +869,14 @@ local function resolveAnimatedQualityGradientProfile(pathKey, gradientPath)
 	if key == "Quality:9" then
 		return "OGQualityGradient"
 	end
-	if key == "Rarity:4" then
+	if key == "Rarity:5" then
 		return "LavaRarityGradient"
 	end
 	if key == "Rarity:6" then
-		return "HackerRarityGradient"
+		return "RainbowRarityGradient"
 	end
 	if key == "Rarity:7" then
-		return "RainbowRarityGradient"
+		return "HackerRarityGradient"
 	end
 
 	if type(gradientPath) ~= "string" then
@@ -1165,10 +1273,60 @@ function BrainrotService:_disconnectConnections(connectionList)
 	end
 end
 
+function BrainrotService:_clearPlacedPromptForPosition(userId, positionKey)
+	local promptStateByPosition = self._placedPromptStateByUserId[userId]
+	if type(promptStateByPosition) ~= "table" then
+		return
+	end
+
+	local promptState = promptStateByPosition[positionKey]
+	if type(promptState) ~= "table" then
+		return
+	end
+
+	if promptState.Connection and promptState.Connection.Disconnect then
+		promptState.Connection:Disconnect()
+		promptState.Connection = nil
+	end
+
+	if promptState.Prompt and promptState.Prompt.Parent then
+		promptState.Prompt:Destroy()
+	end
+
+	promptStateByPosition[positionKey] = nil
+	if next(promptStateByPosition) == nil then
+		self._placedPromptStateByUserId[userId] = nil
+	end
+end
+
+function BrainrotService:_clearPlacedPromptState(player)
+	if not player then
+		return
+	end
+
+	local userId = player.UserId
+	local promptStateByPosition = self._placedPromptStateByUserId[userId]
+	if type(promptStateByPosition) ~= "table" then
+		return
+	end
+
+	local pendingPositionKeys = {}
+	for positionKey in pairs(promptStateByPosition) do
+		table.insert(pendingPositionKeys, positionKey)
+	end
+
+	for _, positionKey in ipairs(pendingPositionKeys) do
+		self:_clearPlacedPromptForPosition(userId, positionKey)
+	end
+
+	self._placedPromptStateByUserId[userId] = nil
+end
+
 function BrainrotService:_clearPromptConnections(player)
 	local userId = player.UserId
 	self:_disconnectConnections(self._promptConnectionsByUserId[userId])
 	self._promptConnectionsByUserId[userId] = nil
+	self:_clearPlacedPromptState(player)
 	self._platformsByUserId[userId] = nil
 end
 
@@ -1241,6 +1399,7 @@ end
 
 function BrainrotService:_clearRuntimePlaced(player)
 	self:_stopAllIdleTracks(player)
+	self:_clearPlacedPromptState(player)
 
 	local userId = player.UserId
 	local runtimePlaced = self._runtimePlacedByUserId[userId]
@@ -1477,6 +1636,16 @@ function BrainrotService:_getOrCreateProductionSlot(productionState, positionKey
 	end
 
 	return slot
+end
+
+function BrainrotService:_resetProductionSlotValues(slot)
+	if type(slot) ~= "table" then
+		return
+	end
+
+	slot.CurrentGold = 0
+	slot.OfflineGold = 0
+	slot.FriendBonusRemainder = 0
 end
 
 function BrainrotService:_collectProductionBonusRates(player)
@@ -1835,6 +2004,43 @@ function BrainrotService:_refreshBrainrotTools(player)
 	end
 end
 
+function BrainrotService:_findBrainrotToolByInstanceId(player, instanceId)
+	local targetInstanceId = tonumber(instanceId)
+	if not targetInstanceId then
+		return nil
+	end
+
+	local backpack = player and player:FindFirstChild("Backpack") or nil
+	local character = player and player.Character or nil
+	for _, container in ipairs({ backpack, character }) do
+		if container then
+			for _, child in ipairs(container:GetChildren()) do
+				if child:IsA("Tool") and child:GetAttribute("BrainrotTool") and tonumber(child:GetAttribute("BrainrotInstanceId")) == targetInstanceId then
+					return child
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+function BrainrotService:_equipBrainrotToolByInstanceId(player, instanceId)
+	local tool = self:_findBrainrotToolByInstanceId(player, instanceId)
+	if not tool then
+		return false
+	end
+
+	local character = player and player.Character or nil
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid") or nil
+	if not humanoid then
+		return false
+	end
+
+	humanoid:EquipTool(tool)
+	return true
+end
+
 function BrainrotService:GrantBrainrot(player, brainrotId, quantity, reason)
 	local parsedBrainrotId = math.floor(tonumber(brainrotId) or 0)
 	local parsedQuantity = math.floor(tonumber(quantity) or 0)
@@ -1895,7 +2101,6 @@ function BrainrotService:_restorePlacedFromData(player)
 	end
 
 	local platformsByPositionKey = self._platformsByUserId[player.UserId] or {}
-	local runtimePlaced = ensureTable(self._runtimePlacedByUserId, player.UserId)
 
 	for positionKey, placedData in pairs(placedBrainrots) do
 		local platformInfo = platformsByPositionKey[positionKey]
@@ -1905,8 +2110,7 @@ function BrainrotService:_restorePlacedFromData(player)
 		if platformInfo and brainrotDefinition then
 			local placedModel = self:_createPlacedModel(platformInfo.Attachment, brainrotDefinition, placedData.Level)
 			if placedModel then
-				runtimePlaced[positionKey] = placedModel
-				self:_playIdleAnimationForPlaced(player, positionKey, placedModel, brainrotDefinition)
+				self:_registerPlacedRuntime(player, positionKey, placedModel, brainrotDefinition)
 			end
 		end
 	end
@@ -1985,6 +2189,7 @@ function BrainrotService:PushBrainrotState(player)
 				baseCoinPerSecond = getBrainrotBaseProductionSpeed(brainrotDefinition),
 				coinPerSecond = getBrainrotProductionSpeed(brainrotDefinition, level),
 				nextUpgradeCost = getBrainrotUpgradeCost(brainrotDefinition, level),
+				sellPrice = getBrainrotSellPrice(brainrotDefinition),
 				modelPath = brainrotDefinition.ModelPath,
 			})
 		end
@@ -2095,12 +2300,34 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
 	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
 end
 
+function BrainrotService:OnHomeLayoutChanged(player, assignedHome)
+	local _playerData, _brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
+	local targetHome = assignedHome or self._homeService:GetAssignedHome(player)
+	if targetHome then
+		self:_bindHomePrompts(player, targetHome)
+		self:_bindHomeClaims(player, targetHome)
+		self:_bindHomeBrands(player, targetHome)
+	else
+		self:_clearPromptConnections(player)
+		self:_clearClaimConnections(player)
+		self:_clearBrandState(player)
+	end
+
+	self:_restorePlacedFromData(player)
+	self:_refreshAllClaimUi(player, placedBrainrots, productionState)
+	self:_refreshAllBrandUi(player, placedBrainrots)
+	self:_refreshAllPlatformPrompts(player, placedBrainrots)
+	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+	self:PushBrainrotState(player)
+end
+
 function BrainrotService:OnPlayerRemoving(player)
 	self:_clearPromptConnections(player)
 	self:_clearClaimConnections(player)
 	self:_clearToolConnections(player)
 	self:_clearBrandState(player)
 	self:_clearRuntimePlaced(player)
+	self._sellRequestClockByUserId[player.UserId] = nil
 
 	player:SetAttribute("TotalProductionSpeedBase", nil)
 	player:SetAttribute("TotalProductionBonusRate", nil)
@@ -2119,6 +2346,10 @@ function BrainrotService:Init(dependencies)
 	self._requestBrainrotStateSyncEvent = self._remoteEventService:GetEvent("RequestBrainrotStateSync")
 	self._requestBrainrotUpgradeEvent = self._remoteEventService:GetEvent("RequestBrainrotUpgrade")
 	self._brainrotUpgradeFeedbackEvent = self._remoteEventService:GetEvent("BrainrotUpgradeFeedback")
+	self._requestBrainrotSellEvent = self._remoteEventService:GetEvent("RequestBrainrotSell")
+	self._brainrotSellFeedbackEvent = self._remoteEventService:GetEvent("BrainrotSellFeedback")
+	self._requestStudioBrainrotGrantEvent = self._remoteEventService:GetEvent("RequestStudioBrainrotGrant")
+	self._studioBrainrotGrantFeedbackEvent = self._remoteEventService:GetEvent("StudioBrainrotGrantFeedback")
 	self._claimCashFeedbackEvent = self._remoteEventService:GetEvent("ClaimCashFeedback")
 
 	if self._requestBrainrotStateSyncEvent then
@@ -2130,6 +2361,18 @@ function BrainrotService:Init(dependencies)
 	if self._requestBrainrotUpgradeEvent then
 		self._requestBrainrotUpgradeEvent.OnServerEvent:Connect(function(player, payload)
 			self:_handleRequestBrainrotUpgrade(player, payload)
+		end)
+	end
+
+	if self._requestBrainrotSellEvent then
+		self._requestBrainrotSellEvent.OnServerEvent:Connect(function(player, payload)
+			self:_handleRequestBrainrotSell(player, payload)
+		end)
+	end
+
+	if self._requestStudioBrainrotGrantEvent then
+		self._requestStudioBrainrotGrantEvent.OnServerEvent:Connect(function(player, payload)
+			self:_handleRequestStudioBrainrotGrant(player, payload)
 		end)
 	end
 
@@ -2352,6 +2595,7 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition, brai
 		for _, basePart in ipairs(baseParts) do
 			basePart.CanCollide = false
 			basePart.CanTouch = false
+			basePart.CanQuery = false
 			basePart.Anchored = not useSingleAnchor or (basePart == anchorPart)
 		end
 
@@ -2382,6 +2626,7 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition, brai
 			if descendant:IsA("BasePart") then
 				descendant.CanCollide = false
 				descendant.CanTouch = false
+				descendant.CanQuery = false
 				descendant.Anchored = not useSingleAnchor or (descendant == primaryPart)
 			elseif descendant:IsA("ProximityPrompt") then
 				descendant.Enabled = false
@@ -2407,6 +2652,7 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition, brai
 		placedInstance.Anchored = true
 		placedInstance.CanCollide = false
 		placedInstance.CanTouch = false
+		placedInstance.CanQuery = false
 		local partYawCFrame = makeYawOnlyCFrame(placedInstance.CFrame, targetPosition, targetYawCFrame.LookVector)
 		if partYawCFrame then
 			placedInstance.CFrame = partYawCFrame
@@ -2441,6 +2687,243 @@ function BrainrotService:_createPlacedModel(attachment, brainrotDefinition, brai
 	return placedInstance
 end
 
+function BrainrotService:_resolvePlacedPromptParent(placedInstance)
+	if not placedInstance then
+		return nil
+	end
+
+	if placedInstance:IsA("Model") then
+		local primaryPart = placedInstance.PrimaryPart
+		if primaryPart and primaryPart:IsA("BasePart") then
+			return primaryPart
+		end
+
+		local humanoidRootPart = placedInstance:FindFirstChild("HumanoidRootPart", true)
+		if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+			return humanoidRootPart
+		end
+
+		local rootPart = placedInstance:FindFirstChild("RootPart", true)
+		if rootPart and rootPart:IsA("BasePart") then
+			return rootPart
+		end
+	end
+
+	return getFirstBasePart(placedInstance)
+end
+
+function BrainrotService:_handlePlacedBrainrotPromptTriggered(player, positionKey)
+	local platformsByPositionKey = self._platformsByUserId[player.UserId]
+	local platformInfo = platformsByPositionKey and platformsByPositionKey[positionKey] or nil
+	if not platformInfo then
+		return
+	end
+
+	if self:_getEquippedBrainrotTool(player) then
+		self:_swapEquippedBrainrotWithPlaced(player, platformInfo)
+	else
+		self:_pickupPlacedBrainrot(player, positionKey, false)
+	end
+end
+
+function BrainrotService:_attachPlacedPickupPrompt(player, positionKey, placedInstance, brainrotDefinition)
+	if not (player and positionKey and placedInstance) then
+		return nil
+	end
+
+	local promptParent = self:_resolvePlacedPromptParent(placedInstance)
+	if not (promptParent and promptParent:IsA("BasePart")) then
+		return nil
+	end
+
+	local userId = player.UserId
+	self:_clearPlacedPromptForPosition(userId, positionKey)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = tostring((GameConfig.BRAINROT or {}).PlacedPickupPromptName or "PlacedPickupPrompt")
+	prompt.ActionText = tostring((GameConfig.BRAINROT or {}).PlacedPickupPromptActionText or "Pick Up")
+	prompt.ObjectText = tostring((brainrotDefinition and brainrotDefinition.Name) or (GameConfig.BRAINROT or {}).PlacedPickupPromptObjectText or "Brainrot")
+	prompt.HoldDuration = tonumber((GameConfig.BRAINROT or {}).PromptHoldDuration) or 1
+	prompt.RequiresLineOfSight = false
+	prompt.MaxActivationDistance = 10
+	prompt.Parent = promptParent
+
+	local connection = prompt.Triggered:Connect(function(triggerPlayer)
+		if triggerPlayer ~= player then
+			return
+		end
+
+		self:_handlePlacedBrainrotPromptTriggered(player, positionKey)
+	end)
+
+	local promptStateByPosition = ensureTable(self._placedPromptStateByUserId, userId)
+	promptStateByPosition[positionKey] = {
+		Prompt = prompt,
+		Connection = connection,
+	}
+
+	return prompt
+end
+
+function BrainrotService:_registerPlacedRuntime(player, positionKey, placedInstance, brainrotDefinition)
+	if not (player and positionKey and placedInstance) then
+		return
+	end
+
+	local runtimePlaced = ensureTable(self._runtimePlacedByUserId, player.UserId)
+	runtimePlaced[positionKey] = placedInstance
+	self:_playIdleAnimationForPlaced(player, positionKey, placedInstance, brainrotDefinition)
+	self:_attachPlacedPickupPrompt(player, positionKey, placedInstance, brainrotDefinition)
+end
+
+function BrainrotService:_destroyRuntimePlacedAtPosition(player, positionKey)
+	if not (player and positionKey) then
+		return
+	end
+
+	local userId = player.UserId
+	self:_stopIdleTrack(player, positionKey)
+	self:_clearPlacedPromptForPosition(userId, positionKey)
+	self:_clearClaimBounceState(userId, positionKey, false)
+
+	local runtimePlaced = self._runtimePlacedByUserId[userId]
+	if type(runtimePlaced) ~= "table" then
+		return
+	end
+
+	local runtimeInstance = runtimePlaced[positionKey]
+	if runtimeInstance and runtimeInstance.Parent then
+		runtimeInstance:Destroy()
+	end
+	runtimePlaced[positionKey] = nil
+	if next(runtimePlaced) == nil then
+		self._runtimePlacedByUserId[userId] = nil
+	end
+end
+
+function BrainrotService:_pickupPlacedBrainrot(player, positionKey, shouldEquipAfterRefresh)
+	local _playerData, brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
+	if not brainrotData or not placedBrainrots or not productionState then
+		return false, nil
+	end
+
+	local placedData = placedBrainrots[positionKey]
+	if type(placedData) ~= "table" then
+		self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
+		return false, nil
+	end
+
+	local inventoryItem = buildInventoryItemSnapshot(placedData.InstanceId, placedData.BrainrotId, placedData.Level)
+	if inventoryItem.InstanceId <= 0 or inventoryItem.BrainrotId <= 0 then
+		return false, nil
+	end
+
+	placedBrainrots[positionKey] = nil
+	table.insert(brainrotData.Inventory, inventoryItem)
+	brainrotData.EquippedInstanceId = 0
+
+	self:_destroyRuntimePlacedAtPosition(player, positionKey)
+	local productionSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
+	self:_resetProductionSlotValues(productionSlot)
+	self:_refreshBrainrotTools(player)
+
+	if shouldEquipAfterRefresh == true then
+		task.defer(function()
+			self:_equipBrainrotToolByInstanceId(player, inventoryItem.InstanceId)
+		end)
+	end
+
+	self:PushBrainrotState(player)
+	self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
+	self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
+	self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
+	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+	return true, inventoryItem
+end
+
+function BrainrotService:_swapEquippedBrainrotWithPlaced(player, platformInfo)
+	local _playerData, brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
+	if not brainrotData or not placedBrainrots or not productionState then
+		return false
+	end
+
+	local positionKey = platformInfo and platformInfo.PositionKey or nil
+	local placedData = positionKey and placedBrainrots[positionKey] or nil
+	if type(placedData) ~= "table" then
+		return false
+	end
+
+	local equippedTool = self:_getEquippedBrainrotTool(player)
+	if not equippedTool then
+		return false
+	end
+
+	local equippedInstanceId = tonumber(equippedTool:GetAttribute("BrainrotInstanceId"))
+	local equippedBrainrotId = tonumber(equippedTool:GetAttribute("BrainrotId"))
+	if not equippedInstanceId or not equippedBrainrotId then
+		return false
+	end
+
+	local inventoryIndex = findInventoryIndexByInstanceId(brainrotData.Inventory, equippedInstanceId)
+	if not inventoryIndex then
+		return false
+	end
+
+	local equippedInventoryItem = brainrotData.Inventory[inventoryIndex]
+	if tonumber(equippedInventoryItem.BrainrotId) ~= equippedBrainrotId then
+		return false
+	end
+
+	local equippedDefinition = BrainrotConfig.ById[equippedBrainrotId]
+	local placedBrainrotId = tonumber(placedData.BrainrotId)
+	local placedDefinition = placedBrainrotId and BrainrotConfig.ById[placedBrainrotId] or nil
+	if not equippedDefinition or not placedDefinition then
+		return false
+	end
+
+	local pickupInventoryItem = buildInventoryItemSnapshot(placedData.InstanceId, placedData.BrainrotId, placedData.Level)
+	self:_destroyRuntimePlacedAtPosition(player, positionKey)
+
+	local placedModel = self:_createPlacedModel(platformInfo.Attachment, equippedDefinition, equippedInventoryItem.Level)
+	if not placedModel then
+		local restoredModel = self:_createPlacedModel(platformInfo.Attachment, placedDefinition, placedData.Level)
+		if restoredModel then
+			self:_registerPlacedRuntime(player, positionKey, restoredModel, placedDefinition)
+		end
+		self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
+		self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
+		self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
+		return false
+	end
+
+	table.remove(brainrotData.Inventory, inventoryIndex)
+	table.insert(brainrotData.Inventory, pickupInventoryItem)
+	brainrotData.EquippedInstanceId = 0
+
+	placedBrainrots[positionKey] = {
+		InstanceId = equippedInstanceId,
+		BrainrotId = equippedBrainrotId,
+		Level = normalizeBrainrotLevel(equippedInventoryItem.Level),
+		PlacedAt = os.time(),
+	}
+
+	local productionSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
+	self:_resetProductionSlotValues(productionSlot)
+	self:_registerPlacedRuntime(player, positionKey, placedModel, equippedDefinition)
+	self:_refreshBrainrotTools(player)
+
+	task.defer(function()
+		self:_equipBrainrotToolByInstanceId(player, pickupInventoryItem.InstanceId)
+	end)
+
+	self:PushBrainrotState(player)
+	self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
+	self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
+	self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
+	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+	return true
+end
+
 function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
 	local playerData, brainrotData, placedBrainrots, productionState = self:_getOrCreateDataContainers(player)
 	if not playerData or not brainrotData or not placedBrainrots or not productionState then
@@ -2452,19 +2935,20 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
 	if existingPlaced then
 		local runtimePlaced = self._runtimePlacedByUserId[player.UserId]
 		local runtimeInstance = runtimePlaced and runtimePlaced[positionKey] or nil
+		local existingBrainrotId = tonumber(existingPlaced.BrainrotId)
+		local existingDefinition = existingBrainrotId and BrainrotConfig.ById[existingBrainrotId] or nil
 		if runtimeInstance and runtimeInstance.Parent then
+			if existingDefinition then
+				self:_attachPlacedPickupPrompt(player, positionKey, runtimeInstance, existingDefinition)
+			end
 			self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
 			return
 		end
 
-		local existingBrainrotId = tonumber(existingPlaced.BrainrotId)
-		local existingDefinition = existingBrainrotId and BrainrotConfig.ById[existingBrainrotId] or nil
 		if existingDefinition then
 			local recoveredModel = self:_createPlacedModel(platformInfo.Attachment, existingDefinition, existingPlaced.Level)
 			if recoveredModel then
-				runtimePlaced = ensureTable(self._runtimePlacedByUserId, player.UserId)
-				runtimePlaced[positionKey] = recoveredModel
-				self:_playIdleAnimationForPlaced(player, positionKey, recoveredModel, existingDefinition)
+				self:_registerPlacedRuntime(player, positionKey, recoveredModel, existingDefinition)
 				self:_refreshClaimUiForPosition(player, positionKey, placedBrainrots, productionState)
 				self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
 				self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
@@ -2474,10 +2958,8 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
 
 		-- 兜底：旧脏数据阻塞放置时，自动清理占位，避免永远无法放置
 		placedBrainrots[positionKey] = nil
-		local staleSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
-		staleSlot.CurrentGold = 0
-		staleSlot.OfflineGold = 0
-		staleSlot.FriendBonusRemainder = 0
+		local productionSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
+	self:_resetProductionSlotValues(productionSlot)
 		self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
 		self:_refreshPlatformPromptState(player, positionKey, placedBrainrots)
 	end
@@ -2523,14 +3005,9 @@ function BrainrotService:_placeEquippedBrainrot(player, platformInfo)
 		PlacedAt = os.time(),
 	}
 
-	local slot = self:_getOrCreateProductionSlot(productionState, positionKey)
-	slot.CurrentGold = 0
-	slot.OfflineGold = 0
-	slot.FriendBonusRemainder = 0
-
-	local runtimePlaced = ensureTable(self._runtimePlacedByUserId, player.UserId)
-	runtimePlaced[positionKey] = placedModel
-	self:_playIdleAnimationForPlaced(player, positionKey, placedModel, brainrotDefinition)
+	local productionSlot = self:_getOrCreateProductionSlot(productionState, positionKey)
+	self:_resetProductionSlotValues(productionSlot)
+	self:_registerPlacedRuntime(player, positionKey, placedModel, brainrotDefinition)
 
 	equippedTool:Destroy()
 	self:PushBrainrotState(player)
@@ -3197,7 +3674,13 @@ function BrainrotService:_getEquippedBrainrotTool(player)
 end
 
 function BrainrotService:_buildPositionKey(platformPart)
-	local parentPart = platformPart.Parent
+	local parentPart = platformPart and platformPart.Parent or nil
+	local positionPrefix = tostring((GameConfig.BRAINROT or {}).PositionPrefix or "Position")
+	local positionKey = resolveHomeSlotPositionKey(parentPart or platformPart, positionPrefix, parentPart)
+	if positionKey then
+		return positionKey
+	end
+
 	if parentPart and parentPart.Name then
 		return parentPart.Name
 	end
@@ -3216,7 +3699,7 @@ function BrainrotService:_scanHomePlatforms(homeModel)
 	local triggerName = tostring(GameConfig.BRAINROT.PlatformTriggerName or "Trigger")
 
 	for _, descendant in ipairs(homeBase:GetDescendants()) do
-		if isPlatformPart(descendant) then
+		if isPlatformPart(descendant) and isHomeSlotUnlocked(descendant) then
 			local positionRoot = descendant.Parent
 
 			local attachment = descendant:FindFirstChild(attachmentName)
@@ -3325,17 +3808,15 @@ function BrainrotService:_scanHomeClaims(homeModel)
 	end
 
 	local claimPrefix = tostring(GameConfig.BRAINROT.ClaimPrefix or "Claim")
-	local positionPrefix = tostring(GameConfig.BRAINROT.PositionPrefix or "Position")
 	local moneyFrameName = tostring(GameConfig.BRAINROT.MoneyFrameName or "Money")
 	local currentGoldLabelName = tostring(GameConfig.BRAINROT.CurrentGoldLabelName or "CurrentGold")
 	local offlineGoldLabelName = tostring(GameConfig.BRAINROT.OfflineGoldLabelName or "OfflineGold")
 
 	for _, descendant in ipairs(homeBase:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			local claimIndex = parseTrailingIndex(descendant.Name, claimPrefix)
-			if claimIndex then
-				local positionKey = string.format("%s%d", positionPrefix, claimIndex)
-
+		local claimIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, claimPrefix) or nil
+		if claimIndex and isHomeSlotUnlocked(descendant) then
+			local positionKey = resolveHomeSlotPositionKey(descendant, claimPrefix, descendant)
+			if positionKey then
 				local touchPart = descendant:FindFirstChild("Touch")
 				if touchPart and not touchPart:IsA("BasePart") then
 					touchPart = nil
@@ -3355,7 +3836,7 @@ function BrainrotService:_scanHomeClaims(homeModel)
 					PositionKey = positionKey,
 					ClaimPart = descendant,
 					TouchPart = touchPart,
-					ClaimKey = descendant.Name,
+					ClaimKey = string.format("%s:%s", descendant.Name, positionKey),
 					ClaimBaseCFrame = descendant.CFrame,
 					TouchBaseCFrame = touchPart and touchPart.CFrame or nil,
 					MoneyFrame = moneyFrame,
@@ -3367,6 +3848,7 @@ function BrainrotService:_scanHomeClaims(homeModel)
 	end
 
 	return claimsByPositionKey
+
 end
 
 function BrainrotService:_clearBrandState(player)
@@ -3394,7 +3876,6 @@ function BrainrotService:_scanHomeBrands(homeModel)
 	end
 
 	local brandPrefix = tostring(GameConfig.BRAINROT.BrandPrefix or "Brand")
-	local positionPrefix = tostring(GameConfig.BRAINROT.PositionPrefix or "Position")
 	local surfaceGuiName = tostring(GameConfig.BRAINROT.BrandSurfaceGuiName or "SurfaceGui")
 	local frameName = tostring(GameConfig.BRAINROT.BrandFrameName or "Frame")
 	local moneyRootName = tostring(GameConfig.BRAINROT.BrandMoneyRootName or "Money")
@@ -3402,10 +3883,10 @@ function BrainrotService:_scanHomeBrands(homeModel)
 	local levelLabelName = tostring(GameConfig.BRAINROT.BrandLevelLabelName or "Level")
 
 	for _, descendant in ipairs(homeBase:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			local brandIndex = parseTrailingIndex(descendant.Name, brandPrefix)
-			if brandIndex then
-				local positionKey = string.format("%s%d", positionPrefix, brandIndex)
+		local brandIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, brandPrefix) or nil
+		if brandIndex and isHomeSlotUnlocked(descendant) then
+			local positionKey = resolveHomeSlotPositionKey(descendant, brandPrefix, descendant)
+			if positionKey then
 				local surfaceGui = descendant:FindFirstChild(surfaceGuiName)
 				if not (surfaceGui and surfaceGui:IsA("SurfaceGui")) then
 					local nestedSurfaceGui = descendant:FindFirstChild(surfaceGuiName, true)
@@ -3420,11 +3901,14 @@ function BrainrotService:_scanHomeBrands(homeModel)
 				local moneyRoot = findFirstGuiObjectByName(frame or surfaceGui, moneyRootName)
 				local costLabel = findFirstTextLabelByName(moneyRoot or frame or surfaceGui, costLabelName)
 				local levelLabel = findFirstTextLabelByName(frame or surfaceGui, levelLabelName)
-
 				brandsByPositionKey[positionKey] = {
 					PositionKey = positionKey,
-					BrandKey = descendant.Name,
+					BrandKey = string.format("%s:%s", descendant.Name, positionKey),
 					BrandPart = descendant,
+					BrandPartOriginalTransparency = descendant.Transparency,
+					BrandPartOriginalCanCollide = descendant.CanCollide,
+					BrandPartOriginalCanTouch = descendant.CanTouch,
+					BrandPartOriginalCanQuery = descendant.CanQuery,
 					SurfaceGui = surfaceGui,
 					Frame = frame,
 					CostLabel = costLabel,
@@ -3444,9 +3928,19 @@ function BrainrotService:_applyBrandUi(brandInfo, enabled, currentLevel, upgrade
 
 	local isVisible = enabled == true
 	local normalizedLevel = normalizeBrainrotLevel(currentLevel)
+	if brandInfo.BrandPart and brandInfo.BrandPart:IsA("BasePart") then
+		brandInfo.BrandPart.Transparency = isVisible and (tonumber(brandInfo.BrandPartOriginalTransparency) or 0) or 1
+		brandInfo.BrandPart.CanCollide = isVisible and (brandInfo.BrandPartOriginalCanCollide ~= false) or false
+		brandInfo.BrandPart.CanTouch = isVisible and (brandInfo.BrandPartOriginalCanTouch ~= false) or false
+		brandInfo.BrandPart.CanQuery = isVisible and (brandInfo.BrandPartOriginalCanQuery ~= false) or false
+	end
+
 
 	if brandInfo.SurfaceGui and brandInfo.SurfaceGui:IsA("SurfaceGui") then
 		brandInfo.SurfaceGui.Enabled = isVisible
+		brandInfo.SurfaceGui.AlwaysOnTop = true
+		brandInfo.SurfaceGui.LightInfluence = 0
+		brandInfo.SurfaceGui.ZOffset = 2
 	end
 
 	if brandInfo.Frame and brandInfo.Frame:IsA("GuiObject") then
@@ -3454,7 +3948,7 @@ function BrainrotService:_applyBrandUi(brandInfo, enabled, currentLevel, upgrade
 	end
 
 	if brandInfo.CostLabel then
-		brandInfo.CostLabel.Text = isVisible and formatBrainrotCurrency(upgradeCost) or formatBrainrotCurrency(0)
+		brandInfo.CostLabel.Text = isVisible and formatBrainrotCompactCurrency(upgradeCost) or formatBrainrotCompactCurrency(0)
 		brandInfo.CostLabel.Visible = isVisible
 	end
 
@@ -3609,6 +4103,228 @@ function BrainrotService:_handleRequestBrainrotUpgrade(player, payload)
 	end
 
 	self:_upgradePlacedBrainrot(player, positionKey)
+end
+
+function BrainrotService:_pushStudioBrainrotGrantFeedback(player, status, brainrotId, grantedCount)
+	if not (player and self._studioBrainrotGrantFeedbackEvent) then
+		return
+	end
+
+	local parsedBrainrotId = math.max(0, math.floor(tonumber(brainrotId) or 0))
+	local brainrotDefinition = BrainrotConfig.ById[parsedBrainrotId]
+	self._studioBrainrotGrantFeedbackEvent:FireClient(player, {
+		status = tostring(status or "Unknown"),
+		brainrotId = parsedBrainrotId,
+		brainrotName = brainrotDefinition and tostring(brainrotDefinition.Name or "") or "",
+		grantedCount = math.max(0, math.floor(tonumber(grantedCount) or 0)),
+		timestamp = os.clock(),
+	})
+end
+
+function BrainrotService:_handleRequestStudioBrainrotGrant(player, payload)
+	if not player then
+		return
+	end
+
+	if not RunService:IsStudio() then
+		self:_pushStudioBrainrotGrantFeedback(player, "NotStudio", 0, 0)
+		return
+	end
+
+	local brainrotId = nil
+	if type(payload) == "table" then
+		brainrotId = payload.brainrotId
+	else
+		brainrotId = payload
+	end
+
+	local parsedBrainrotId = math.floor(tonumber(brainrotId) or 0)
+	if parsedBrainrotId <= 0 then
+		self:_pushStudioBrainrotGrantFeedback(player, "InvalidBrainrotId", 0, 0)
+		return
+	end
+
+	if not BrainrotConfig.ById[parsedBrainrotId] then
+		self:_pushStudioBrainrotGrantFeedback(player, "BrainrotNotFound", parsedBrainrotId, 0)
+		return
+	end
+
+	local success, status, grantedCount = self:GrantBrainrot(player, parsedBrainrotId, 1, "StudioDebug")
+	if not success then
+		self:_pushStudioBrainrotGrantFeedback(player, status or "GrantFailed", parsedBrainrotId, grantedCount or 0)
+		return
+	end
+
+	self:_pushStudioBrainrotGrantFeedback(player, "Success", parsedBrainrotId, grantedCount)
+end
+
+function BrainrotService:_pushBrainrotSellFeedback(player, status, soldCount, soldValue, remainingInventoryCount, mode, currentCoins, soldInstanceId)
+	if not (player and self._brainrotSellFeedbackEvent) then
+		return
+	end
+
+	self._brainrotSellFeedbackEvent:FireClient(player, {
+		status = tostring(status or "Unknown"),
+		soldCount = math.max(0, math.floor(tonumber(soldCount) or 0)),
+		soldValue = roundBrainrotEconomicValue(soldValue),
+		remainingInventoryCount = math.max(0, math.floor(tonumber(remainingInventoryCount) or 0)),
+		mode = tostring(mode or "Single"),
+		currentCoins = roundBrainrotEconomicValue(currentCoins),
+		soldInstanceId = math.max(0, math.floor(tonumber(soldInstanceId) or 0)),
+		timestamp = os.clock(),
+	})
+end
+
+function BrainrotService:_canHandleSellRequest(player)
+	if not player then
+		return false
+	end
+
+	local debounceSeconds = math.max(0.05, tonumber((GameConfig.BRAINROT or {}).SellRequestDebounceSeconds) or 0.2)
+	local nowClock = os.clock()
+	local lastClock = tonumber(self._sellRequestClockByUserId[player.UserId]) or 0
+	if nowClock - lastClock < debounceSeconds then
+		return false
+	end
+
+	self._sellRequestClockByUserId[player.UserId] = nowClock
+	return true
+end
+
+function BrainrotService:_sellBrainrotByInstanceId(player, instanceId)
+	local _playerData, brainrotData = self:_getOrCreateDataContainers(player)
+	if not brainrotData then
+		return false
+	end
+
+	local targetInstanceId = math.floor(tonumber(instanceId) or 0)
+	if targetInstanceId <= 0 then
+		self:_pushBrainrotSellFeedback(player, "InvalidInstanceId", 0, 0, #(brainrotData.Inventory or {}), "Single", self._playerDataService and self._playerDataService:GetCoins(player) or 0, 0)
+		return false
+	end
+
+	local inventoryIndex = findInventoryIndexByInstanceId(brainrotData.Inventory, targetInstanceId)
+	if not inventoryIndex then
+		self:_pushBrainrotSellFeedback(player, "BrainrotNotFound", 0, 0, #(brainrotData.Inventory or {}), "Single", self._playerDataService and self._playerDataService:GetCoins(player) or 0, targetInstanceId)
+		return false
+	end
+
+	local inventoryItem = brainrotData.Inventory[inventoryIndex]
+	local brainrotId = tonumber(inventoryItem and inventoryItem.BrainrotId)
+	local brainrotDefinition = brainrotId and BrainrotConfig.ById[brainrotId] or nil
+	if not brainrotDefinition then
+		self:_pushBrainrotSellFeedback(player, "BrainrotConfigMissing", 0, 0, #(brainrotData.Inventory or {}), "Single", self._playerDataService and self._playerDataService:GetCoins(player) or 0, targetInstanceId)
+		return false
+	end
+
+	local sellPrice = getBrainrotSellPrice(brainrotDefinition)
+	if sellPrice <= 0 then
+		self:_pushBrainrotSellFeedback(player, "SellValueInvalid", 0, 0, #(brainrotData.Inventory or {}), "Single", self._playerDataService and self._playerDataService:GetCoins(player) or 0, targetInstanceId)
+		return false
+	end
+
+	local success = false
+	local nextCoins = 0
+	local previousEquippedInstanceId = math.max(0, math.floor(tonumber(brainrotData.EquippedInstanceId) or 0))
+	if self._currencyService then
+		success, nextCoins = self._currencyService:AddCoins(player, sellPrice, "BrainrotSellSingle")
+	end
+	if not success then
+		self:_pushBrainrotSellFeedback(player, "CurrencyFailed", 0, 0, #(brainrotData.Inventory or {}), "Single", self._playerDataService and self._playerDataService:GetCoins(player) or 0, targetInstanceId)
+		return false
+	end
+
+	table.remove(brainrotData.Inventory, inventoryIndex)
+
+	local reEquipInstanceId = 0
+	if previousEquippedInstanceId > 0 and previousEquippedInstanceId ~= targetInstanceId then
+		if findInventoryIndexByInstanceId(brainrotData.Inventory, previousEquippedInstanceId) then
+			reEquipInstanceId = previousEquippedInstanceId
+		end
+	elseif previousEquippedInstanceId == targetInstanceId then
+		brainrotData.EquippedInstanceId = 0
+	end
+
+	self:_refreshBrainrotTools(player)
+	if reEquipInstanceId > 0 then
+		task.defer(function()
+			self:_equipBrainrotToolByInstanceId(player, reEquipInstanceId)
+		end)
+	end
+
+	self:PushBrainrotState(player)
+	self:_pushBrainrotSellFeedback(player, "Success", 1, sellPrice, #brainrotData.Inventory, "Single", nextCoins, targetInstanceId)
+	return true
+end
+
+function BrainrotService:_sellAllBrainrots(player)
+	local _playerData, brainrotData = self:_getOrCreateDataContainers(player)
+	if not brainrotData then
+		return false
+	end
+
+	local inventory = brainrotData.Inventory or {}
+	if #inventory <= 0 then
+		self:_pushBrainrotSellFeedback(player, "InventoryEmpty", 0, 0, 0, "All", self._playerDataService and self._playerDataService:GetCoins(player) or 0, 0)
+		return false
+	end
+
+	local totalSellValue = 0
+	local soldCount = 0
+	local remainingInventory = {}
+	for _, inventoryItem in ipairs(inventory) do
+		local brainrotId = tonumber(inventoryItem and inventoryItem.BrainrotId)
+		local brainrotDefinition = brainrotId and BrainrotConfig.ById[brainrotId] or nil
+		if brainrotDefinition then
+			totalSellValue = roundBrainrotEconomicValue(totalSellValue + getBrainrotSellPrice(brainrotDefinition))
+			soldCount += 1
+		else
+			table.insert(remainingInventory, inventoryItem)
+		end
+	end
+
+	if soldCount <= 0 or totalSellValue <= 0 then
+		self:_pushBrainrotSellFeedback(player, "InventoryEmpty", 0, 0, #inventory, "All", self._playerDataService and self._playerDataService:GetCoins(player) or 0, 0)
+		return false
+	end
+
+	local success = false
+	local nextCoins = 0
+	if self._currencyService then
+		success, nextCoins = self._currencyService:AddCoins(player, totalSellValue, "BrainrotSellAll")
+	end
+	if not success then
+		self:_pushBrainrotSellFeedback(player, "CurrencyFailed", 0, 0, #inventory, "All", self._playerDataService and self._playerDataService:GetCoins(player) or 0, 0)
+		return false
+	end
+
+	brainrotData.Inventory = remainingInventory
+	brainrotData.EquippedInstanceId = 0
+
+	self:_refreshBrainrotTools(player)
+	self:PushBrainrotState(player)
+	self:_pushBrainrotSellFeedback(player, "Success", soldCount, totalSellValue, #brainrotData.Inventory, "All", nextCoins, 0)
+	return true
+end
+
+function BrainrotService:_handleRequestBrainrotSell(player, payload)
+	if not self:_canHandleSellRequest(player) then
+		return
+	end
+
+	if type(payload) == "table" and payload.sellAll == true then
+		self:_sellAllBrainrots(player)
+		return
+	end
+
+	local instanceId = nil
+	if type(payload) == "table" then
+		instanceId = payload.instanceId
+	else
+		instanceId = payload
+	end
+
+	self:_sellBrainrotByInstanceId(player, instanceId)
 end
 
 function BrainrotService:_pulseLabel(label)
@@ -3933,24 +4649,6 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
 	end
 end
 return BrainrotService
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

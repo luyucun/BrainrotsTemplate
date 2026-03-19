@@ -30,8 +30,6 @@ local WATCHED_NAMES = {
     Home = true,
     Sell = true,
     Icon = true,
-    TextLabel = true,
-    TextButton = true,
 }
 
 local HOVER_SCALE_RATIO = 1.1

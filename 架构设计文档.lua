@@ -1,15 +1,15 @@
-﻿--[[
+--[[
 =====================================================
-游戏整体架构设计文档（V2.5）
+游戏整体架构设计文档（V2.7）
 =====================================================
 
 项目名称: BrainrotsTemplate
-当前版本: V2.5
-文档更新时间: 2026-03-17
+当前版本: V2.7
+文档更新时间: 2026-03-19
 
 一、核心分层
 1. Shared 配置层（ReplicatedStorage/Shared）
-- GameConfig: 全局配置，集中管理家园、DataStore、脑红、武器、Rebirth、全局排行榜、特殊事件、脑红升级参数等。
+- GameConfig: 全局配置，集中管理家园、家园拓展、DataStore、脑红、武器、Rebirth、全局排行榜、特殊事件、脑红升级、脑红出售参数等。
 - BrainrotConfig: 脑红静态配置表，来源于 Excel 脑红表同步结果。
 - RebirthConfig: Rebirth 静态配置表。
 - BrainrotDisplayConfig: 脑红品质/稀有度展示名与渐变路径映射。
@@ -19,7 +19,8 @@
 - PlayerDataService: 玩家数据读写、默认值合并、会话缓存、自动保存、排行榜快照持久化。
 - HomeService: 家园分配、回收、传送。
 - CurrencyService: 金币增减、同步，以及默认玩家列表 Cash 展示。
-- BrainrotService: 脑红背包、装备、放置、产金、领取、世界模型运行态、Index 解锁历史、Claim UI 刷新、Brand 升级台刷新、升级服务端校验。
+- BrainrotService: 脑红背包、装备、放置、已放置脑红拾取/替换、产金、领取、出售、世界模型运行态、Index 解锁历史、Claim UI 刷新、Brand 升级台刷新、升级与出售服务端校验、多楼层 PositionKey 映射，以及 Studio 调试脑红发放请求。
+- HomeExpansionService: V2.7 新增；家园拓展价格表、楼层克隆、锁定点位显隐、BaseUpgrade 文案刷新、拓展购买请求与反馈。
 - RebirthService: Rebirth 条件校验、执行、状态同步、产速倍率更新。
 - FriendBonusService: 同服好友数量统计与好友产速加成同步。
 - QuickTeleportService: Home / Shop / Sell 快捷传送请求。
@@ -41,7 +42,10 @@
 - MainButtonFxController: 主界面按钮 Hover / Press 动效。
 - ModalController: 通用弹窗开关与 Blur 动效。
 - IndexController: 图鉴界面、分类页签、条目渲染、渐变展示、进度统计。
-- BrainrotUpgradeController: 扫描自己家园的 BrandX 升级台，绑定点击升级、箭头上下循环动画、升级成功/失败音效。
+- BrainrotUpgradeController: 扫描自己家园的 BrandX 升级台，绑定点击升级、箭头上下循环动画、升级成功/失败音效，并兼容多楼层重复 Brand 命名。
+- HomeExpansionController: V2.7 新增；扫描自己家园的 BaseUpgrade 世界 UI，发送拓展请求，并处理拓展失败音效。
+- BrainrotSellController: V2.6 新增；负责 SellBrainrots 弹窗开关、Shop02/PrisonerTouch 触碰打开、出售列表渲染、品质渐变、单个/全部出售按钮请求与出售成功音效。
+- StudioBrainrotDebugController: 仅 Studio 环境下生效；按 V 打开脑红测试面板，展示全部脑红的名字/品质/稀有度/产速，并可点击 Send 给当前玩家补 1 个指定脑红。
 - RebirthController: Rebirth 面板、进度、请求与反馈表现。
 - GlobalLeaderboardController: 本地玩家卡片刷新，读取玩家 Attribute 更新两个排行榜下方个人信息区域。
 - SpecialEventController: 监听特殊事件同步，在本地给自己角色挂事件模板，并本地复制 Lighting 事件天空盒子节点。
@@ -76,6 +80,21 @@
 - 金币底层允许小数；主界面 CoinNum 仍按整数显示并向上取整。
 - 升级费用、产速、待领取金币等带小数的文案统一最多显示 1 位小数，四舍五入。
 
+6. V2.6 脑红出售
+- 已放置脑红现在会挂载 Pick Up 长按 Prompt；空手长按时回收到背包，手持脑红长按时触发“手里 A 与台上 B”替换。
+- 脑红出售价格: baseCoinPerSecond * 15，只看 1 级基础产速，不看当前等级产速。
+- SellBrainrots 面板由客户端本地控制打开/关闭；顶部 Sell 按钮会在请求快捷传送到 Sell 点的同时打开面板。
+- 玩家触碰 Shop02/PrisonerTouch 时，也会本地打开 SellBrainrots 面板。
+- BrainrotSellController 渲染出售列表、Inventory value 汇总值，以及每个脑红品质文本的渐变展示。
+- 脑红出售成功后，服务端加金币并刷新 BrainrotStateSync；客户端只根据 BrainrotSellFeedback 播放出售成功音效并在背包为空时自动关闭面板。
+
+7. V2.7 家园拓展
+- 玩家默认拥有 10 个基础脑红位；额外 20 个拓展位按配置表顺序逐个购买，价格从 100 到 2000。
+- 当玩家首次解锁二层或三层时，HomeExpansionService 会从 ReplicatedStorage/HomeFloor 克隆楼层模板到该玩家家园，并按楼层高度偏移放置。
+- 额外楼层中未解锁的 Position / Claim / Brand 会被服务端隐藏并禁用，避免脑红放置、金币领取或升级交互提前出现。
+- BaseUpgrade 世界 UI 的 CurrentGold / Level 文案由服务端直接刷新；客户端只负责点击请求和失败音效表现。
+- BrainrotService 与 BrainrotUpgradeController 改为优先读取楼层属性，把二层三层重复的 Position1/Claim1/Brand1 映射为全局 Position11~30。
+
 三、关键数据结构
 1. 持久化 PlayerData
 - Currency.Coins
@@ -84,6 +103,7 @@
 - HomeState.HomeId
 - HomeState.PlacedBrainrots[positionKey] -> InstanceId / BrainrotId / Level / PlacedAt
 - HomeState.ProductionState[positionKey] -> CurrentGold / OfflineGold / FriendBonusRemainder
+- HomeState.UnlockedExpansionCount
 - BrainrotData.Inventory[{ InstanceId, BrainrotId, Level }]
 - BrainrotData.EquippedInstanceId / NextInstanceId / StarterGranted / UnlockedBrainrotIds
 - WeaponState.StarterWeaponGranted / OwnedWeaponIds / EquippedWeaponId
@@ -94,11 +114,14 @@
 2. 运行态数据（不入档）
 - BrainrotService._runtimePlacedByUserId
 - BrainrotService._runtimeIdleTracksByUserId
+- BrainrotService._placedPromptStateByUserId
 - BrainrotService._claimTouchDebounceByUserId
 - BrainrotService._claimEffectByUserId
 - BrainrotService._claimBounceStateByUserId
 - BrainrotService._brandsByUserId
 - BrainrotService._upgradeRequestClockByUserId
+- BrainrotService._sellRequestClockByUserId
+- HomeExpansionService._lastRequestClockByUserId
 - FriendBonusService._stateByUserId
 - RebirthService._lastRequestClockByUserId
 - GlobalLeaderboardService._memoryScoresByBoardKey / _cachedEntriesByBoardKey / _userInfoByUserId
@@ -111,15 +134,32 @@
 - V2.5 起 total 与 delta 可带小数；CoinDisplayController 决定展示策略。
 
 2. BrainrotStateSync
-- inventory[i] 现包含 level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost。
+- inventory[i] 现包含 level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost / sellPrice。
 - placed[i] 现包含 level / baseCoinPerSecond / coinPerSecond / nextUpgradeCost。
 - totalProductionBaseSpeed / totalProductionSpeed 现反映升级后的真实产速，而不再只是基础表值求和。
+- V2.6 起 sellPrice 直接由服务端下发，出售界面不再依赖客户端自行推导最终售价。
 
 3. RequestBrainrotUpgrade / BrainrotUpgradeFeedback
 - 客户端只上传 positionKey。
 - 服务端重新校验脑红存在、等级、费用、金币余额与请求频率。
 - 成功后同时触发: 扣金币 -> 升级 -> 刷新 Brand UI -> 刷新 BrainrotStateSync -> 更新总产速 Attribute。
 - 反馈事件只负责客户端本地音效，不承载可信业务结果。
+
+4. RequestBrainrotSell / BrainrotSellFeedback
+- 客户端上传 instanceId 或 sellAll=true。
+- 服务端重新校验脑红实例是否真实位于玩家背包、售价是否有效、请求频率是否合法，并重新结算金币。
+- 成功后同时触发: 加金币 -> 刷新背包工具 -> 刷新 BrainrotStateSync -> 下发 BrainrotSellFeedback。
+- BrainrotSellFeedback 只负责客户端本地成功音效与面板自动关闭，不承载可信业务真值。
+
+5. RequestHomeExpansion / HomeExpansionFeedback
+- 客户端不上传价格、楼层或目标格子，只发起“购买下一个拓展位”的请求。
+- 服务端重新校验当前已解锁数量、下一档价格、玩家金币余额和请求频率，成功后扣金币、更新 HomeState.UnlockedExpansionCount、刷新楼层与 BaseUpgrade UI。
+- HomeExpansionFeedback 只负责客户端本地失败音效，不承载可信业务真值。
+
+6. RequestStudioBrainrotGrant / StudioBrainrotGrantFeedback
+- 客户端只上传目标 brainrotId，由 StudioBrainrotDebugController 在本地调试面板中触发。
+- 服务端必须先校验 RunService:IsStudio()，再校验 brainrotId 是否真实存在，成功后统一复用 BrainrotService:GrantBrainrot(player, brainrotId, 1, "StudioDebug")。
+- StudioBrainrotGrantFeedback 只负责本地测试面板提示，不承载正式玩法逻辑。
 
 五、服务端初始化顺序（MainServer）
 1. RemoteEventService:Init()
@@ -131,14 +171,15 @@
 7. FriendBonusService:Init(...)
 8. QuickTeleportService:Init(...)
 9. BrainrotService:Init(...)
-10. RebirthService:Init(...)
-11. GMCommandService:Init(...)
-12. SocialService:Init(...)
-13. GlobalLeaderboardService:Init(...)
-14. SpecialEventService:Init(...)
-15. PlayerAdded 流程: 分配家园 -> 读档 -> 恢复武器 -> 初始化好友加成 -> 初始化 Rebirth 属性 -> 恢复脑红/离线收益/图鉴历史/Brand 升级台 -> 社交同步 -> 同步当前活跃特殊事件状态 -> 金币同步 -> 排行榜个人卡刷新
-16. PlayerRemoving 流程: 解绑 -> 武器清理 -> 排行榜快照刷新 -> 好友加成重算 -> 脑红运行态清理 -> Rebirth 清理 -> 社交清理 -> 回收家园 -> 保存数据
-17. BindToClose: 先刷新全局排行榜快照，再保存所有玩家数据
+10. HomeExpansionService:Init(...)
+11. RebirthService:Init(...)
+12. GMCommandService:Init(...)
+13. SocialService:Init(...)
+14. GlobalLeaderboardService:Init(...)
+15. SpecialEventService:Init(...)
+16. PlayerAdded 流程: 分配家园 -> 读档 -> 恢复武器 -> 初始化好友加成 -> 初始化 Rebirth 属性 -> 应用家园拓展楼层与 BaseUpgrade UI -> 恢复脑红/离线收益/图鉴历史/Brand 升级台 -> 社交同步 -> 同步当前活跃特殊事件状态 -> 金币同步 -> 排行榜个人卡刷新
+17. PlayerRemoving 流程: 解绑 -> 武器清理 -> 排行榜快照刷新 -> 好友加成重算 -> 脑红运行态清理 -> 回收家园拓展运行态 -> Rebirth 清理 -> 社交清理 -> 回收家园 -> 保存数据
+18. BindToClose: 先刷新全局排行榜快照，再保存所有玩家数据
 
 六、维护约束
 1. 未来若新增或修改 RemoteEvent，必须同步更新：
@@ -155,8 +196,13 @@
 7. 公共排行榜行内容由服务端驱动，底部个人卡片由客户端驱动。
 8. 当前特殊事件系统采用“服务端调度 + 客户端本地表现”；若未来需要倒计时 UI、全服公告或跨玩家可见表现，再继续扩展同步协议。
 9. V2.5 起，脑红等级只以服务端存档和服务端计算结果为准，客户端不可自行推导为最终真值。
+10. V2.6 起，脑红出售价格、出售结果与背包实例是否合法，全部只以服务端计算与存档为准。
+11. V2.7 起，多楼层拓展点位统一由服务端按楼层属性映射成 Position11~30，客户端不可把二层/三层重复命名当成同一个位置。
+12. Studio 调试脑红发放只允许在 Studio 环境下使用，正式服即便存在同名 Remote 也必须由服务端拒绝。
 
 =====================================================
 文档结束
 =====================================================
 ]]
+
+

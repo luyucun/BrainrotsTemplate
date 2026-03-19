@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: RemoteEventService
 脚本文件: RemoteEventService.lua
 脚本类型: ModuleScript
@@ -77,12 +77,18 @@ function RemoteEventService:Init()
     self._events.RequestRebirthStateSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestRebirthStateSync)
     self._events.RequestRebirth = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestRebirth)
     self._events.RebirthFeedback = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RebirthFeedback)
+    self._events.RequestHomeExpansion = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestHomeExpansion)
+    self._events.HomeExpansionFeedback = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.HomeExpansionFeedback)
     self._events.SpecialEventStateSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.SpecialEventStateSync)
     self._events.RequestSpecialEventStateSync = findOrCreateRemoteEvent(systemEvents, RemoteNames.System.RequestSpecialEventStateSync)
     self._events.BrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotStateSync)
     self._events.RequestBrainrotStateSync = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotStateSync)
     self._events.RequestBrainrotUpgrade = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotUpgrade)
     self._events.BrainrotUpgradeFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotUpgradeFeedback)
+    self._events.RequestBrainrotSell = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotSell) -- V2.6
+    self._events.BrainrotSellFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotSellFeedback) -- V2.6
+    self._events.RequestStudioBrainrotGrant = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestStudioBrainrotGrant) -- Studio Only
+    self._events.StudioBrainrotGrantFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.StudioBrainrotGrantFeedback) -- Studio Only
 end
 
 function RemoteEventService:GetEvent(eventKey)
@@ -90,3 +96,4 @@ function RemoteEventService:GetEvent(eventKey)
 end
 
 return RemoteEventService
+

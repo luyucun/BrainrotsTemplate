@@ -823,3 +823,80 @@ V2.1 图鉴系统（Index系统）
     1.4玩家点击Brand1 - SurfaceGui - Frame来触发升级
 
 2.玩家点击升级时，如果金币充足则升级成功，扣除金币升级成功然后播放音效：rbxassetid://72535887807534，路径是SoundService - Audio - MoneyTouch，如果金币不足则无法升级并播放音效rbxassetid://118029437877580，路径是SoundService - Audio - Wrong
+
+
+需求文档V2.6  脑红出售
+
+概述：玩家背包中的脑红除了可以放置在Platform上赚金币，也能够直接出售
+
+在做功能前我们先补充一个规则：移除放在Platform上的脑红，具体规则是：
+1.如果脑红放在Platform上，玩家靠近脑红后，需要在脑红上出现交互按钮，玩家长按交互按钮可以将脑红从platform上移除，放到玩家的背包中。
+2.脑红上出现的交互按钮文本是：Pick Up，长按交互时间和放在Platform上长按的时间是一致的
+3.如果玩家在手中拿着一个脑红的情况下，长按Platform上的脑红交互，走替换逻辑，比如拿的A，长按与放置好的B交互，就把B换到手里，A放到位置上即可
+
+出售脑红规则：
+1.玩家可以出售背包中的拥有的脑红
+2.脑红出售价格=脑红1级时的基础产速*15，也就是基础产速产出15秒的总的金币数值
+
+出售相关客户端规则：
+1.玩家点击StarterGui - Main - Top - Sell按钮，除了现在移动到目的地外，也顺路打开Sell界面，也就是把StarterGui - Main - SellBrainrots的Visible改成true
+2.补充下，打开Sell界面的逻辑应该是：玩家与Shop02 - PrisonerTouch触碰，就打开Sell界面
+3.玩家点击StarterGui - Main - SellBrainrots - Title - CloseButton按钮，关闭界面就是把StarterGui - Main - SellBrainrots的Visible改成false
+4.注意：打开弹框时，打开关闭都要有动效，有通用的blur效果，隐藏ui这些逻辑都要有，然后鼠标移动到StarterGui - Main - SellBrainrots - Title - CloseButton，也要有给CloseButton的旋转放大效果
+
+5.Main - SellBrainrots - Sellinfo - ScrollingFrame - Template是可出售脑红的信息模板，默认是隐藏的，生成对应信息时复制出来更改对应信息然后显示出来即可
+6.生成脑红列表时，按照背包中的顺序显示即可
+7.ScrollingFrame - Template - HeadTemplate - Icon是用于显示这个脑红的图标
+8.ScrollingFrame - Template - HeadTemplate - Level是textlabel，用于显示这个脑红的等级信息，格式固定是Lv.x
+9.ScrollingFrame - Template - Money是textlabel，用于显示脑红的出售价格，格式固定是$xxx，注意这里用我们的大数值显示逻辑
+10.ScrollingFrame - Template - Name是textlabel，用于显示脑红的名字
+11.ScrollingFrame - Template - Quality是textlabel，用于显示脑红的品质名字，注意这里要挂对应的渐变并且要有渐变效果，类似脑红头顶的品质效果还有Index界面处的品质显示渐变效果，都是一套
+12.ScrollingFrame - Template - SellButton是出售按钮，点击后可出售这个脑红，注意出售后把金币加给玩家
+13.玩家点击SellBrainrots - Sellinfo - SellButton按钮，可以一键全部出售所有的脑红
+14.注意出售脑红后，要有和按下按钮领取金币时一样的音效，每次点击按钮出售后都播一次音效
+15.点击ScrollingFrame - Template - SellButton和SellBrainrots - Sellinfo - SellButton这俩按钮都要有按下效果反馈
+16.SellBrainrots - Sellinfo - InventoryValue是textlabel，用于显示当前出售所有的脑红所可以获得的所有金币，格式固定是：Inventory value: $xxxx，xxx是金币数值，这里要用大数值显示
+17.如果玩家点击ScrollingFrame - Template - SellButton或者SellBrainrots - Sellinfo - SellButton，点击出售后，如果已经没有脑红可以出售了，就自动关闭界面
+
+需求文档V2.7 家园拓展
+
+概述：我们玩家的家园初始只有10组可以放置脑红的点位（一组包括Platform/Claim/brand三个位置，用于放脑红/领金币/升级脑红）
+
+详细规则：
+1.玩家可以花费金币，来拓展家里的放置脑红的点位数量，每次可以拓展1个
+2.我们按顺序进行拓展，每个拓展点位都有对应的金币价格
+3.由于我们的初始基地一层最多能放下10个点位，所以拓展新的点位要给基地新加一层，但是也只有拓展第二层的第一个点位和第三层的第一个点位的时候，需要把额外的层数加好，其他的都只控制点位出现即可
+4.我们做一张这样的表：
+ID	第几个位置	层数	解锁价格
+1001	1	2	100
+1002	2	2	200
+1003	3	2	300
+1004	4	2	400
+1005	5	2	500
+1006	6	2	600
+1007	7	2	700
+1008	8	2	800
+1009	9	2	900
+1010	10	2	1000
+2001	1	3	1100
+2002	2	3	1200
+2003	3	3	1300
+2004	4	3	1400
+2005	5	3	1500
+2006	6	3	1600
+2007	7	3	1700
+2008	8	3	1800
+2009	9	3	1900
+2010	10	3	2000
+
+
+当需要生成层数时：去ReplicatedStorage下寻找HomeFloor，复制一份，放到玩家的基地上，这样就形成了一层新的楼层，其中HomeFloor下也有Position1/Claim1/Brand1这些，比如第二层就对应第二层的第一个第二个位置这样
+由于我们是一个一个解锁的，所以比如上来第二层只解锁了第一组，那么其他9组的Part需要都给隐藏掉，不能用，等解锁了之后再显示出来
+上面的表中当层数那一列出现新的层数时，就意味着需要加一层新的楼了
+
+客户端规则：
+1.我们以Home01举例，PlayerHome - Home01 - HomeBase下有个节点Part叫BaseUpgrade
+2.BaseUpgrade - SurfaceGui - Frame - Money - Frame - CurrentGold是textlabel，用于代表解锁下一个格子所需要花费的金币数
+3.BaseUpgrade - SurfaceGui - Frame - Money - Frame - Level是用于显示解锁进度，格式是x/y,x代表当前已经解锁了几个，y代表总共可以解锁几个，比如刚才表中我们解锁到1003时，代表已经解锁了三个，那这里就是3/20
+4.当全部解锁完成后，CurrentGold显示为Max，然后Level显示为x/x,比如20/20
+5.玩家点击BaseUpgrade - SurfaceGui - Frame - Money即可触发解锁，消耗金币解锁位置

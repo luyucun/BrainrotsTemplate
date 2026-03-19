@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V2.5"
+GameConfig.VERSION = "V2.7"
 
 GameConfig.MAX_SERVER_PLAYERS = 5
 
@@ -22,6 +22,52 @@ GameConfig.HOME = {
 	SpawnLocationName = "SpawnLocation",
 }
 
+GameConfig.HOME_EXPANSION = {
+	BaseSlotCount = 10,
+	SlotsPerFloor = 10,
+	MaxFloorLevel = 3,
+	TemplateName = "HomeFloor",
+	RuntimeFloorPrefix = "HomeFloorRuntime",
+	RuntimeFloorLevelAttributeName = "HomeExpansionFloorLevel",
+	RuntimeLocalSlotIndexAttributeName = "HomeExpansionLocalSlotIndex",
+	RuntimeGlobalSlotIndexAttributeName = "HomeExpansionGlobalSlotIndex",
+	RuntimePositionKeyAttributeName = "HomeExpansionPositionKey",
+	RuntimeUnlockedAttributeName = "HomeExpansionUnlocked",
+	RuntimeGeneratedFloorAttributeName = "HomeExpansionGeneratedFloor",
+	BaseUpgradePartName = "BaseUpgrade",
+	BaseUpgradeSurfaceGuiName = "SurfaceGui",
+	BaseUpgradeFrameName = "Frame",
+	BaseUpgradeMoneyRootName = "Money",
+	BaseUpgradeInnerFrameName = "Frame",
+	BaseUpgradeCostLabelName = "CurrentGold",
+	BaseUpgradeLevelLabelName = "Level",
+	FeedbackWrongSoundTemplateName = "Wrong",
+	FeedbackWrongSoundAssetId = "rbxassetid://118029437877580",
+	RequestDebounceSeconds = 0.2,
+	FloorVerticalOffset = 32,
+	UnlockEntries = {
+		{ Id = 1001, LocalSlotIndex = 1, FloorLevel = 2, UnlockPrice = 100 },
+		{ Id = 1002, LocalSlotIndex = 2, FloorLevel = 2, UnlockPrice = 200 },
+		{ Id = 1003, LocalSlotIndex = 3, FloorLevel = 2, UnlockPrice = 300 },
+		{ Id = 1004, LocalSlotIndex = 4, FloorLevel = 2, UnlockPrice = 400 },
+		{ Id = 1005, LocalSlotIndex = 5, FloorLevel = 2, UnlockPrice = 500 },
+		{ Id = 1006, LocalSlotIndex = 6, FloorLevel = 2, UnlockPrice = 600 },
+		{ Id = 1007, LocalSlotIndex = 7, FloorLevel = 2, UnlockPrice = 700 },
+		{ Id = 1008, LocalSlotIndex = 8, FloorLevel = 2, UnlockPrice = 800 },
+		{ Id = 1009, LocalSlotIndex = 9, FloorLevel = 2, UnlockPrice = 900 },
+		{ Id = 1010, LocalSlotIndex = 10, FloorLevel = 2, UnlockPrice = 1000 },
+		{ Id = 2001, LocalSlotIndex = 1, FloorLevel = 3, UnlockPrice = 1100 },
+		{ Id = 2002, LocalSlotIndex = 2, FloorLevel = 3, UnlockPrice = 1200 },
+		{ Id = 2003, LocalSlotIndex = 3, FloorLevel = 3, UnlockPrice = 1300 },
+		{ Id = 2004, LocalSlotIndex = 4, FloorLevel = 3, UnlockPrice = 1400 },
+		{ Id = 2005, LocalSlotIndex = 5, FloorLevel = 3, UnlockPrice = 1500 },
+		{ Id = 2006, LocalSlotIndex = 6, FloorLevel = 3, UnlockPrice = 1600 },
+		{ Id = 2007, LocalSlotIndex = 7, FloorLevel = 3, UnlockPrice = 1700 },
+		{ Id = 2008, LocalSlotIndex = 8, FloorLevel = 3, UnlockPrice = 1800 },
+		{ Id = 2009, LocalSlotIndex = 9, FloorLevel = 3, UnlockPrice = 1900 },
+		{ Id = 2010, LocalSlotIndex = 10, FloorLevel = 3, UnlockPrice = 2000 },
+	},
+}
 GameConfig.DATASTORE = {
 	StudioName = "Brainrots_PlayerData_STUDIO_V1",
 	LiveName = "Brainrots_PlayerData_LIVE_V1",
@@ -39,6 +85,7 @@ GameConfig.WEAPON = {
 	ToolsRootFolderName = "Tools",
 	StarterWeaponFolderName = "StarterWeapon",
 	DefaultWeaponId = "Bat",
+	SwingAttackAnimationId = "79436155132033",
 	SlotCount = 1, -- Reserved: currently fixed to one weapon slot
 	ToolIsWeaponAttributeName = "IsWeaponTool",
 	ToolWeaponIdAttributeName = "WeaponId",
@@ -141,6 +188,15 @@ GameConfig.BRAINROT = {
 	ClaimCoinCollectDestroyDistance = 0.8, -- 接近终点后判定销毁的距离阈值（Stud）
 	ClaimCoinCollectFadeOutDuration = 0.075, -- 到达终点时淡出缩小时长（秒）
 	BaseLevel = 1, -- 脑红默认等级
+	PlacedPickupPromptName = "PlacedPickupPrompt", -- V2.6: 放置脑红上的拾取 Prompt 名称
+	PlacedPickupPromptActionText = "Pick Up", -- V2.6: 已放置脑红拾取 Prompt 文案
+	PlacedPickupPromptObjectText = "Brainrot", -- V2.6: 已放置脑红拾取 Prompt 目标文案
+	SellPriceMultiplier = 15, -- V2.6: 出售价格倍率，price = 基础产速 * 15
+	SellRequestDebounceSeconds = 0.2, -- V2.6: 出售请求服务端防抖
+	SellShopModelName = "Shop02", -- V2.6: 触碰打开出售界面的场景模型
+	SellShopTouchPartName = "PrisonerTouch", -- V2.6: 触碰打开出售界面的触碰节点
+	SellSuccessSoundTemplateName = "ADDCash", -- V2.6: 出售成功音效模板（与领取金币一致）
+	SellSuccessSoundAssetId = "rbxassetid://139922061047157", -- V2.6: 出售成功音效资源
 	UpgradeCostMultiplier = 1.5, -- V2.5: 升级费用倍率，cost = baseSpeed * 1.5^(level-1)
 	UpgradeProductionMultiplier = 1.25, -- V2.5: 升级后产速倍率，speed = baseSpeed * 1.25^(level-1)
 	UpgradeValueDisplayDecimals = 1, -- V2.5: 升级费用/产速/UI 文案最多显示 1 位小数
@@ -285,7 +341,7 @@ GameConfig.SPECIAL_EVENT = {
 }
 
 GameConfig.DEFAULT_PLAYER_DATA = {
-	Version = 4,
+	Version = 5,
 	Currency = {
 		Coins = 0,
 	},
@@ -297,6 +353,7 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 		HomeId = "",
 		PlacedBrainrots = {},
 		ProductionState = {},
+		UnlockedExpansionCount = 0,
 	},
 	BrainrotData = {
 		NextInstanceId = 1,

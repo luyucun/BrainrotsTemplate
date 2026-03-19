@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: MainServer
 脚本文件: MainServer.server.lua
 脚本类型: Script
@@ -58,6 +58,7 @@ local WeaponService = requireServerModule("WeaponService")
 local WeaponKnockbackService = requireServerModule("WeaponKnockbackService")
 local GMCommandService = requireServerModule("GMCommandService")
 local BrainrotService = requireServerModule("BrainrotService")
+local HomeExpansionService = requireServerModule("HomeExpansionService")
 local RebirthService = requireServerModule("RebirthService")
 local FriendBonusService = requireServerModule("FriendBonusService")
 local SocialService = requireServerModule("SocialService")
@@ -90,6 +91,13 @@ BrainrotService:Init({
     FriendBonusService = FriendBonusService,
     RemoteEventService = RemoteEventService,
 })
+HomeExpansionService:Init({
+    PlayerDataService = PlayerDataService,
+    HomeService = HomeService,
+    CurrencyService = CurrencyService,
+    RemoteEventService = RemoteEventService,
+    BrainrotService = BrainrotService,
+})
 RebirthService:Init({
     PlayerDataService = PlayerDataService,
     CurrencyService = CurrencyService,
@@ -98,6 +106,7 @@ RebirthService:Init({
 })
 GMCommandService:Init({
     CurrencyService = CurrencyService,
+    HomeExpansionService = HomeExpansionService,
     BrainrotService = BrainrotService,
     RebirthService = RebirthService,
     PlayerDataService = PlayerDataService,
@@ -133,6 +142,7 @@ local function onPlayerAdded(player)
     GMCommandService:BindPlayer(player)
     FriendBonusService:OnPlayerReady(player)
     RebirthService:OnPlayerReady(player)
+    HomeExpansionService:OnPlayerReady(player, assignedHome)
     BrainrotService:OnPlayerReady(player, assignedHome)
     SocialService:OnPlayerReady(player, assignedHome)
     SpecialEventService:OnPlayerReady(player)
@@ -164,6 +174,7 @@ local function onPlayerRemoving(player)
     GlobalLeaderboardService:OnPlayerRemoving(player)
     FriendBonusService:OnPlayerRemoving(player)
     BrainrotService:OnPlayerRemoving(player)
+    HomeExpansionService:OnPlayerRemoving(player, assignedHome)
     RebirthService:OnPlayerRemoving(player)
     CurrencyService:OnPlayerRemoving(player)
     SocialService:OnPlayerRemoving(player, assignedHome)
@@ -183,3 +194,4 @@ game:BindToClose(function()
     GlobalLeaderboardService:FlushAllPlayers()
     PlayerDataService:SaveAllPlayers()
 end)
+

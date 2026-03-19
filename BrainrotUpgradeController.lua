@@ -53,6 +53,89 @@ local function parseTrailingIndex(name, prefix)
     return tonumber(numberText)
 end
 
+local function findHomeExpansionAttribute(instance, attributeName)
+    if not (instance and type(attributeName) == "string" and attributeName ~= "") then
+        return nil, nil
+    end
+
+    local current = instance
+    while current do
+        local attributeValue = current:GetAttribute(attributeName)
+        if attributeValue ~= nil then
+            return attributeValue, current
+        end
+        current = current.Parent
+    end
+
+    return nil, nil
+end
+
+local function getExpandedPositionKeyFromInstance(instance)
+    local expansionConfig = GameConfig.HOME_EXPANSION or {}
+    local positionKeyAttributeName = tostring(expansionConfig.RuntimePositionKeyAttributeName or "HomeExpansionPositionKey")
+    local positionKey = select(1, findHomeExpansionAttribute(instance, positionKeyAttributeName))
+    if type(positionKey) == "string" and positionKey ~= "" then
+        return positionKey
+    end
+
+    return nil
+end
+
+local function buildExpandedPositionKey(localSlotIndex, instance)
+    local resolvedLocalSlotIndex = math.floor(tonumber(localSlotIndex) or 0)
+    if resolvedLocalSlotIndex <= 0 then
+        return nil
+    end
+
+    local expansionConfig = GameConfig.HOME_EXPANSION or {}
+    local floorLevelAttributeName = tostring(expansionConfig.RuntimeFloorLevelAttributeName or "HomeExpansionFloorLevel")
+    local localSlotAttributeName = tostring(expansionConfig.RuntimeLocalSlotIndexAttributeName or "HomeExpansionLocalSlotIndex")
+    local slotsPerFloor = math.max(1, math.floor(tonumber(expansionConfig.SlotsPerFloor) or 10))
+    local resolvedFloorLevel = math.max(1, math.floor(tonumber(select(1, findHomeExpansionAttribute(instance, floorLevelAttributeName)) or 1)))
+    local attributedLocalSlotIndex = math.floor(tonumber(select(1, findHomeExpansionAttribute(instance, localSlotAttributeName)) or resolvedLocalSlotIndex))
+    if attributedLocalSlotIndex > 0 then
+        resolvedLocalSlotIndex = attributedLocalSlotIndex
+    end
+
+    local positionPrefix = tostring((GameConfig.BRAINROT or {}).PositionPrefix or "Position")
+    return string.format("%s%d", positionPrefix, ((resolvedFloorLevel - 1) * slotsPerFloor) + resolvedLocalSlotIndex)
+end
+
+local function resolveHomeSlotPositionKey(instance, namePrefix, fallbackInstance)
+    local directPositionKey = getExpandedPositionKeyFromInstance(instance)
+    if directPositionKey then
+        return directPositionKey
+    end
+
+    if fallbackInstance then
+        local fallbackPositionKey = getExpandedPositionKeyFromInstance(fallbackInstance)
+        if fallbackPositionKey then
+            return fallbackPositionKey
+        end
+    end
+
+    local localSlotIndex = parseTrailingIndex(instance and instance.Name or nil, namePrefix)
+    if not localSlotIndex and fallbackInstance then
+        localSlotIndex = parseTrailingIndex(fallbackInstance.Name, namePrefix)
+    end
+    if not localSlotIndex then
+        return nil
+    end
+
+    return buildExpandedPositionKey(localSlotIndex, fallbackInstance or instance)
+end
+
+local function isHomeSlotUnlocked(instance)
+    local expansionConfig = GameConfig.HOME_EXPANSION or {}
+    local unlockedAttributeName = tostring(expansionConfig.RuntimeUnlockedAttributeName or "HomeExpansionUnlocked")
+    local unlockedValue = select(1, findHomeExpansionAttribute(instance, unlockedAttributeName))
+    if unlockedValue == nil then
+        return true
+    end
+
+    return unlockedValue == true
+end
+
 local function findFirstDescendantByNames(root, names)
     if not root then
         return nil
@@ -343,18 +426,17 @@ function BrainrotUpgradeController:_bindHomeBrands()
     end
 
     local brandPrefix = tostring((GameConfig.BRAINROT or {}).BrandPrefix or "Brand")
-    local positionPrefix = tostring((GameConfig.BRAINROT or {}).PositionPrefix or "Position")
     local surfaceGuiName = tostring((GameConfig.BRAINROT or {}).BrandSurfaceGuiName or "SurfaceGui")
     local frameName = tostring((GameConfig.BRAINROT or {}).BrandFrameName or "Frame")
     local arrowName = tostring((GameConfig.BRAINROT or {}).BrandArrowName or "Arrow")
 
     local foundAny = false
     for _, descendant in ipairs(homeBase:GetDescendants()) do
-        if descendant:IsA("BasePart") then
-            local brandIndex = parseTrailingIndex(descendant.Name, brandPrefix)
-            if brandIndex then
+        local brandIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, brandPrefix) or nil
+        if brandIndex and isHomeSlotUnlocked(descendant) then
+            local positionKey = resolveHomeSlotPositionKey(descendant, brandPrefix, descendant)
+            if positionKey then
                 foundAny = true
-                local positionKey = string.format("%s%d", positionPrefix, brandIndex)
                 local surfaceGui = descendant:FindFirstChild(surfaceGuiName)
                 if not (surfaceGui and surfaceGui:IsA("SurfaceGui")) then
                     local nestedSurfaceGui = descendant:FindFirstChild(surfaceGuiName, true)
