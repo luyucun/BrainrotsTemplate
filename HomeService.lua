@@ -135,6 +135,19 @@ function HomeService:GetHomeByName(homeName)
     return self._homeByName[tostring(homeName or "")]
 end
 
+function HomeService:GetAllHomes()
+    local homes = {}
+    for index = 1, GameConfig.HOME.Count do
+        local homeName = buildHomeName(index)
+        local homeModel = self._homeByName[homeName]
+        if homeModel then
+            table.insert(homes, homeModel)
+        end
+    end
+
+    return homes
+end
+
 function HomeService:GetHomeOwnerUserId(homeOrName)
     local homeName = nil
     if typeof(homeOrName) == "Instance" then

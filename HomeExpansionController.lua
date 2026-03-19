@@ -105,6 +105,8 @@ function HomeExpansionController.new()
     self._lastRequestClock = 0
     self._rebindQueued = false
     self._started = false
+    self._baseUpgradeOriginalTransparencyByInstance = setmetatable({}, { __mode = "k" })
+    self._baseUpgradeOriginalEnabledByInstance = setmetatable({}, { __mode = "k" })
     return self
 end
 
@@ -134,6 +136,97 @@ end
 
 function HomeExpansionController:_clearBindings()
     disconnectConnections(self._bindingConnections)
+end
+
+
+function HomeExpansionController:_findBaseUpgradeNodes(homeModel)
+    local homeBase = homeModel and homeModel:FindFirstChild(tostring((GameConfig.HOME or {}).HomeBaseName or "HomeBase")) or nil
+    if not homeBase then
+        return nil
+    end
+
+    local config = GameConfig.HOME_EXPANSION or {}
+    local baseUpgradePart = findFirstDescendantByNames(homeBase, {
+        tostring(config.BaseUpgradePartName or "BaseUpgrade"),
+    })
+    if not baseUpgradePart then
+        return nil
+    end
+
+    local surfaceGui = findFirstDescendantByNames(baseUpgradePart, {
+        tostring(config.BaseUpgradeSurfaceGuiName or "SurfaceGui"),
+    })
+    local frame = findFirstGuiObjectByName(surfaceGui, tostring(config.BaseUpgradeFrameName or "Frame"))
+    local moneyRoot = findFirstGuiObjectByName(frame or surfaceGui, tostring(config.BaseUpgradeMoneyRootName or "Money"))
+
+    return {
+        HomeModel = homeModel,
+        HomeBase = homeBase,
+        BaseUpgradePart = baseUpgradePart,
+        SurfaceGui = surfaceGui,
+        Frame = frame,
+        MoneyRoot = moneyRoot,
+    }
+end
+
+function HomeExpansionController:_setBaseUpgradeVisible(baseUpgradeNodes, isVisible)
+    if not baseUpgradeNodes then
+        return
+    end
+
+    local enabled = isVisible == true
+    local baseUpgradePart = baseUpgradeNodes.BaseUpgradePart
+    if not baseUpgradePart then
+        return
+    end
+
+    if baseUpgradePart:IsA("BasePart") then
+        baseUpgradePart.LocalTransparencyModifier = enabled and 0 or 1
+    end
+
+    local nodes = { baseUpgradePart }
+    for _, descendant in ipairs(baseUpgradePart:GetDescendants()) do
+        table.insert(nodes, descendant)
+    end
+
+    for _, node in ipairs(nodes) do
+        if node ~= baseUpgradePart and node:IsA("BasePart") then
+            node.LocalTransparencyModifier = enabled and 0 or 1
+        elseif node:IsA("Decal") or node:IsA("Texture") then
+            if self._baseUpgradeOriginalTransparencyByInstance[node] == nil then
+                self._baseUpgradeOriginalTransparencyByInstance[node] = node.Transparency
+            end
+            node.Transparency = enabled and (tonumber(self._baseUpgradeOriginalTransparencyByInstance[node]) or 0) or 1
+        elseif node:IsA("LayerCollector") then
+            if self._baseUpgradeOriginalEnabledByInstance[node] == nil then
+                self._baseUpgradeOriginalEnabledByInstance[node] = node.Enabled
+            end
+            node.Enabled = enabled and (self._baseUpgradeOriginalEnabledByInstance[node] ~= false) or false
+        end
+    end
+end
+
+function HomeExpansionController:_refreshBaseUpgradeVisibility()
+    local homesRoot = self:_getPlayerHomesRoot()
+    if not homesRoot then
+        return false
+    end
+
+    local assignedHomeId = self:_getAssignedHomeId()
+    local foundAssignedHome = false
+
+    for _, homeModel in ipairs(homesRoot:GetChildren()) do
+        local baseUpgradeNodes = self:_findBaseUpgradeNodes(homeModel)
+        if baseUpgradeNodes then
+            local isAssignedHome = assignedHomeId ~= "" and homeModel.Name == assignedHomeId
+            self:_setBaseUpgradeVisible(baseUpgradeNodes, isAssignedHome)
+            if isAssignedHome then
+                foundAssignedHome = true
+            end
+        end
+    end
+
+    return foundAssignedHome
 end
 
 function HomeExpansionController:_resolveInteractiveNode(node)
@@ -198,26 +291,11 @@ end
 
 function HomeExpansionController:_bindHomeBaseUpgrade()
     self:_clearBindings()
+    self:_refreshBaseUpgradeVisibility()
 
     local homeModel = self:_getAssignedHomeModel()
-    local homeBase = homeModel and homeModel:FindFirstChild(tostring((GameConfig.HOME or {}).HomeBaseName or "HomeBase")) or nil
-    if not homeBase then
-        return false
-    end
-
-    local config = GameConfig.HOME_EXPANSION or {}
-    local baseUpgradePart = findFirstDescendantByNames(homeBase, {
-        tostring(config.BaseUpgradePartName or "BaseUpgrade"),
-    })
-    if not baseUpgradePart then
-        return false
-    end
-
-    local surfaceGui = findFirstDescendantByNames(baseUpgradePart, {
-        tostring(config.BaseUpgradeSurfaceGuiName or "SurfaceGui"),
-    })
-    local frame = findFirstGuiObjectByName(surfaceGui, tostring(config.BaseUpgradeFrameName or "Frame"))
-    local moneyRoot = findFirstGuiObjectByName(frame or surfaceGui, tostring(config.BaseUpgradeMoneyRootName or "Money"))
+    local baseUpgradeNodes = self:_findBaseUpgradeNodes(homeModel)
+    local moneyRoot = baseUpgradeNodes and baseUpgradeNodes.MoneyRoot or nil
     if not moneyRoot then
         return false
     end
@@ -234,6 +312,7 @@ function HomeExpansionController:_queueRebind()
     self._rebindQueued = true
     task.defer(function()
         self._rebindQueued = false
+        self:_refreshBaseUpgradeVisibility()
         self:_scheduleRetryBind()
     end)
 end
@@ -341,6 +420,7 @@ function HomeExpansionController:Start()
             local homeId = type(payload) == "table" and tostring(payload.homeId or "") or ""
             if homeId ~= "" then
                 self._homeId = homeId
+                self:_refreshBaseUpgradeVisibility()
                 self:_queueRebind()
             end
         end))
@@ -348,6 +428,7 @@ function HomeExpansionController:Start()
 
     table.insert(self._persistentConnections, localPlayer:GetAttributeChangedSignal("HomeId"):Connect(function()
         self._homeId = tostring(localPlayer:GetAttribute("HomeId") or "")
+        self:_refreshBaseUpgradeVisibility()
         self:_queueRebind()
     end))
 
@@ -359,10 +440,12 @@ function HomeExpansionController:Start()
             [tostring(config.BaseUpgradeSurfaceGuiName or "SurfaceGui")] = true,
         }
         if descendant and watchedNames[descendant.Name] then
+            self:_refreshBaseUpgradeVisibility()
             self:_queueRebind()
         end
     end))
 
+    self:_refreshBaseUpgradeVisibility()
     self:_scheduleRetryBind()
 end
 

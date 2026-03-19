@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V2.7"
+GameConfig.VERSION = "V2.8"
 
 GameConfig.MAX_SERVER_PLAYERS = 5
 
@@ -26,6 +26,10 @@ GameConfig.HOME_EXPANSION = {
 	BaseSlotCount = 10,
 	SlotsPerFloor = 10,
 	MaxFloorLevel = 3,
+	StaticFloorNameByLevel = {
+		[2] = { "HomeFloor1", "HomeFloor01" },
+		[3] = { "HomeFloor2", "HomeFloor02", "HomeFloor3", "HomeFloor03" },
+	},
 	TemplateName = "HomeFloor",
 	RuntimeFloorPrefix = "HomeFloorRuntime",
 	RuntimeFloorLevelAttributeName = "HomeExpansionFloorLevel",
@@ -215,6 +219,9 @@ GameConfig.BRAINROT = {
 	UpgradeWrongSoundAssetId = "rbxassetid://118029437877580", -- V2.5: 升级失败音效资源
 	BrandArrowFloatOffset = 8, -- V2.5: 箭头上下浮动像素偏移
 	BrandArrowFloatDuration = 0.9, -- V2.5: 箭头单程浮动时长
+	BrandSurfaceGuiAlwaysOnTop = false, -- V2.8: 升级台 UI 不再永久顶层显示，避免压在角色/脑红前面
+	BrandSurfaceGuiLightInfluence = 0, -- V2.8: 升级台 UI 不受场景光照影响，保持稳定可读
+	BrandSurfaceGuiZOffset = 0.18, -- V2.8: 升级台 UI 轻微离开牌面，既更好点到也不会明显悬浮
 	InfoTemplateRootName = "UI",
 	InfoTemplateName = "BaseInfo",
 	InfoAttachmentName = "Info",
@@ -384,4 +391,3 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 }
 
 return GameConfig
-

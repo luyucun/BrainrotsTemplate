@@ -900,3 +900,19 @@ ID	第几个位置	层数	解锁价格
 3.BaseUpgrade - SurfaceGui - Frame - Money - Frame - Level是用于显示解锁进度，格式是x/y,x代表当前已经解锁了几个，y代表总共可以解锁几个，比如刚才表中我们解锁到1003时，代表已经解锁了三个，那这里就是3/20
 4.当全部解锁完成后，CurrentGold显示为Max，然后Level显示为x/x,比如20/20
 5.玩家点击BaseUpgrade - SurfaceGui - Frame - Money即可触发解锁，消耗金币解锁位置
+
+V2.7.1 关于家园生成的修改
+
+概述：我们之前的去ReplicatedStorage下寻找HomeFloor并复制生成的逻辑实在是太麻烦了，我改成了直接在Workspace下做好，用代码去控制显示与隐藏即可
+
+以Home01举例：
+Home01 - HomeBase是第一层，默认显示出来；Home01 - HomeFloor1是第二层，玩家未解锁之前，是默认全部隐藏，Home01 - HomeFloor3是第三层，玩家未解锁之前，也是默认全部隐藏
+以HomeFloor1举例，HomeFloor1下的所有的组都应该默认隐藏，解锁后，再显示出来，比如解锁了第二层的第一组位置，就把第二层的第一组的Position1/claim1/brand1都显示出来，其他的还是保持隐藏
+其他逻辑保持不变，主要就是从复制生成逻辑改成隐藏显示逻辑。
+
+V2.8 自定义背包
+
+概述：我们现在的背包是使用的系统背包，但是我们需要改成自定义的背包
+
+1.StarterGui - Main - Backpack是个frame，默认Visible是false，当背包中有内容时改成true
+2.Backpack - ItemListFrame - ArmyTemplate是背包内容模板，ArmyTemplate - Icon是图标，ArmyTemplate - Name是名字

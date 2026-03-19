@@ -72,6 +72,11 @@ BrainrotService._didWarnMissingBaseInfoTemplate = false
 BrainrotService._didWarnMissingInfoAttachmentByModelPath = {}
 BrainrotService._didWarnMissingClaimEffectTemplate = false
 
+local HOME_EXPANSION_ORIGINAL_TRANSPARENCY_ATTRIBUTE = "HomeExpansionOriginalTransparency"
+local HOME_EXPANSION_ORIGINAL_CAN_QUERY_ATTRIBUTE = "HomeExpansionOriginalCanQuery"
+local BRAINROT_BRAND_ORIGINAL_TRANSPARENCY_ATTRIBUTE = "BrainrotBrandOriginalTransparency"
+local BRAINROT_BRAND_ORIGINAL_CAN_QUERY_ATTRIBUTE = "BrainrotBrandOriginalCanQuery"
+
 local function ensureTable(parentTable, key)
 	if type(parentTable[key]) ~= "table" then
 		parentTable[key] = {}
@@ -3698,7 +3703,7 @@ function BrainrotService:_scanHomePlatforms(homeModel)
 	local attachmentName = tostring(GameConfig.BRAINROT.PlatformAttachmentName or "BrainrotAttachment")
 	local triggerName = tostring(GameConfig.BRAINROT.PlatformTriggerName or "Trigger")
 
-	for _, descendant in ipairs(homeBase:GetDescendants()) do
+	for _, descendant in ipairs(homeModel:GetDescendants()) do
 		if isPlatformPart(descendant) and isHomeSlotUnlocked(descendant) then
 			local positionRoot = descendant.Parent
 
@@ -3794,7 +3799,7 @@ function BrainrotService:_scanHomePlatforms(homeModel)
 	if next(platforms) == nil then
 		warn(string.format(
 			"[BrainrotService] No valid platforms scanned under: %s",
-			homeBase:GetFullName()
+			homeModel:GetFullName()
 			))
 	end
 
@@ -3812,7 +3817,7 @@ function BrainrotService:_scanHomeClaims(homeModel)
 	local currentGoldLabelName = tostring(GameConfig.BRAINROT.CurrentGoldLabelName or "CurrentGold")
 	local offlineGoldLabelName = tostring(GameConfig.BRAINROT.OfflineGoldLabelName or "OfflineGold")
 
-	for _, descendant in ipairs(homeBase:GetDescendants()) do
+	for _, descendant in ipairs(homeModel:GetDescendants()) do
 		local claimIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, claimPrefix) or nil
 		if claimIndex and isHomeSlotUnlocked(descendant) then
 			local positionKey = resolveHomeSlotPositionKey(descendant, claimPrefix, descendant)
@@ -3882,7 +3887,7 @@ function BrainrotService:_scanHomeBrands(homeModel)
 	local costLabelName = tostring(GameConfig.BRAINROT.BrandCostLabelName or "CurrentGold")
 	local levelLabelName = tostring(GameConfig.BRAINROT.BrandLevelLabelName or "Level")
 
-	for _, descendant in ipairs(homeBase:GetDescendants()) do
+	for _, descendant in ipairs(homeModel:GetDescendants()) do
 		local brandIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, brandPrefix) or nil
 		if brandIndex and isHomeSlotUnlocked(descendant) then
 			local positionKey = resolveHomeSlotPositionKey(descendant, brandPrefix, descendant)
@@ -3896,6 +3901,31 @@ function BrainrotService:_scanHomeBrands(homeModel)
 						surfaceGui = descendant:FindFirstChildWhichIsA("SurfaceGui", true)
 					end
 				end
+                local originalTransparency = descendant:GetAttribute(BRAINROT_BRAND_ORIGINAL_TRANSPARENCY_ATTRIBUTE)
+                if originalTransparency == nil or tonumber(originalTransparency) >= 1 then
+                    originalTransparency = descendant:GetAttribute(HOME_EXPANSION_ORIGINAL_TRANSPARENCY_ATTRIBUTE)
+                    if originalTransparency == nil then
+                        originalTransparency = descendant.Transparency
+                        if tonumber(originalTransparency) == nil or tonumber(originalTransparency) >= 1 then
+                            originalTransparency = 0
+                        end
+                    end
+                    descendant:SetAttribute(BRAINROT_BRAND_ORIGINAL_TRANSPARENCY_ATTRIBUTE, originalTransparency)
+                end
+
+                local originalCanQuery = descendant:GetAttribute(BRAINROT_BRAND_ORIGINAL_CAN_QUERY_ATTRIBUTE)
+                if originalCanQuery == nil or originalCanQuery == false then
+                    local homeExpansionOriginalCanQuery = descendant:GetAttribute(HOME_EXPANSION_ORIGINAL_CAN_QUERY_ATTRIBUTE)
+                    if homeExpansionOriginalCanQuery ~= nil then
+                        originalCanQuery = homeExpansionOriginalCanQuery
+                    else
+                        originalCanQuery = descendant.CanQuery ~= false
+                        if originalCanQuery == false then
+                            originalCanQuery = true
+                        end
+                    end
+                    descendant:SetAttribute(BRAINROT_BRAND_ORIGINAL_CAN_QUERY_ATTRIBUTE, originalCanQuery)
+                end
 
 				local frame = findFirstGuiObjectByName(surfaceGui, frameName)
 				local moneyRoot = findFirstGuiObjectByName(frame or surfaceGui, moneyRootName)
@@ -3905,10 +3935,10 @@ function BrainrotService:_scanHomeBrands(homeModel)
 					PositionKey = positionKey,
 					BrandKey = string.format("%s:%s", descendant.Name, positionKey),
 					BrandPart = descendant,
-					BrandPartOriginalTransparency = descendant.Transparency,
+					BrandPartOriginalTransparency = tonumber(originalTransparency) or 0,
 					BrandPartOriginalCanCollide = descendant.CanCollide,
 					BrandPartOriginalCanTouch = descendant.CanTouch,
-					BrandPartOriginalCanQuery = descendant.CanQuery,
+					BrandPartOriginalCanQuery = originalCanQuery == true,
 					SurfaceGui = surfaceGui,
 					Frame = frame,
 					CostLabel = costLabel,
@@ -3938,9 +3968,9 @@ function BrainrotService:_applyBrandUi(brandInfo, enabled, currentLevel, upgrade
 
 	if brandInfo.SurfaceGui and brandInfo.SurfaceGui:IsA("SurfaceGui") then
 		brandInfo.SurfaceGui.Enabled = isVisible
-		brandInfo.SurfaceGui.AlwaysOnTop = true
-		brandInfo.SurfaceGui.LightInfluence = 0
-		brandInfo.SurfaceGui.ZOffset = 2
+		brandInfo.SurfaceGui.AlwaysOnTop = (GameConfig.BRAINROT.BrandSurfaceGuiAlwaysOnTop == true)
+		brandInfo.SurfaceGui.LightInfluence = tonumber(GameConfig.BRAINROT.BrandSurfaceGuiLightInfluence) or 0
+		brandInfo.SurfaceGui.ZOffset = tonumber(GameConfig.BRAINROT.BrandSurfaceGuiZOffset) or 0.18
 	end
 
 	if brandInfo.Frame and brandInfo.Frame:IsA("GuiObject") then
@@ -3996,6 +4026,22 @@ function BrainrotService:_refreshAllBrandUi(player, placedBrainrots)
 
 	for positionKey in pairs(brandsByPositionKey) do
 		self:_refreshBrandUiForPosition(player, positionKey, placedBrainrots)
+	end
+end
+
+function BrainrotService:ResetHomeWorldUi(homeModel)
+	if not homeModel then
+		return
+	end
+
+	local claimsByPositionKey = self:_scanHomeClaims(homeModel)
+	for _, claimInfo in pairs(claimsByPositionKey) do
+		self:_applyClaimUi(claimInfo, false, 0, 0)
+	end
+
+	local brandsByPositionKey = self:_scanHomeBrands(homeModel)
+	for _, brandInfo in pairs(brandsByPositionKey) do
+		self:_applyBrandUi(brandInfo, false, getBaseBrainrotLevel(), 0)
 	end
 end
 
@@ -4649,10 +4695,3 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
 	end
 end
 return BrainrotService
-
-
-
-
-
-
-

@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 
@@ -202,12 +203,41 @@ local function isUpgradeInput(inputObject)
         or inputObject.UserInputType == Enum.UserInputType.Touch
 end
 
+local function collectGuiObjects(root)
+    local nodes = {}
+    local seen = {}
+
+    local function addNode(node)
+        if not (node and node:IsA("GuiObject")) then
+            return
+        end
+
+        if seen[node] then
+            return
+        end
+
+        seen[node] = true
+        table.insert(nodes, node)
+    end
+
+    addNode(root)
+    if root then
+        for _, descendant in ipairs(root:GetDescendants()) do
+            addNode(descendant)
+        end
+    end
+
+    return nodes
+end
+
 function BrainrotUpgradeController.new()
     local self = setmetatable({}, BrainrotUpgradeController)
     self._homeId = tostring(localPlayer:GetAttribute("HomeId") or "")
     self._brandConnections = {}
     self._persistentConnections = {}
     self._arrowStateByArrow = {}
+    self._brandPositionKeyByInstance = setmetatable({}, { __mode = "k" })
+    self._brandPositionKeyByGuiObject = setmetatable({}, { __mode = "k" })
     self._soundTemplateByKey = {}
     self._didWarnMissingSoundByKey = {}
     self._lastRequestClockByPositionKey = {}
@@ -399,25 +429,159 @@ function BrainrotUpgradeController:_bindBrandClick(positionKey, frame)
         return
     end
 
-    if frame:IsA("GuiButton") then
-        table.insert(self._brandConnections, frame.Activated:Connect(function()
-            self:_requestUpgrade(positionKey)
-        end))
+    local guiNodes = collectGuiObjects(frame)
+    for _, node in ipairs(guiNodes) do
+        if node:IsA("GuiButton") then
+            table.insert(self._brandConnections, node.Activated:Connect(function()
+                self:_requestUpgrade(positionKey)
+            end))
+        else
+            node.Active = true
+            table.insert(self._brandConnections, node.InputBegan:Connect(function(inputObject)
+                if isUpgradeInput(inputObject) then
+                    self:_requestUpgrade(positionKey)
+                end
+            end))
+        end
+    end
+end
+function BrainrotUpgradeController:_bindBrandDetector(positionKey, brandPart)
+    if not (brandPart and brandPart:IsA("BasePart")) then
         return
     end
 
-    if frame:IsA("GuiObject") then
-        frame.Active = true
-        table.insert(self._brandConnections, frame.InputBegan:Connect(function(inputObject)
-            if isUpgradeInput(inputObject) then
-                self:_requestUpgrade(positionKey)
-            end
-        end))
+    local detector = brandPart:FindFirstChild("__BrandUpgradeClickDetector")
+    if not (detector and detector:IsA("ClickDetector")) then
+        detector = Instance.new("ClickDetector")
+        detector.Name = "__BrandUpgradeClickDetector"
+        detector.Parent = brandPart
     end
+
+    detector.MaxActivationDistance = 64
+    table.insert(self._brandConnections, detector.MouseClick:Connect(function(playerWhoClicked)
+        if playerWhoClicked and playerWhoClicked ~= localPlayer then
+            return
+        end
+        self:_requestUpgrade(positionKey)
+    end))
+end
+
+
+function BrainrotUpgradeController:_resolveBrandPositionKeyFromInstance(instance)
+    local current = instance
+    while current do
+        local positionKey = self._brandPositionKeyByInstance[current]
+        if type(positionKey) == "string" and positionKey ~= "" then
+            return positionKey
+        end
+        current = current.Parent
+    end
+
+    return nil
+end
+
+function BrainrotUpgradeController:_getInputScreenPosition(inputObject)
+    if inputObject and inputObject.Position then
+        return Vector2.new(inputObject.Position.X, inputObject.Position.Y)
+    end
+
+    local mousePosition = UserInputService:GetMouseLocation()
+    return Vector2.new(mousePosition.X, mousePosition.Y)
+end
+
+function BrainrotUpgradeController:_registerBrandGuiObjects(positionKey, surfaceGui, frame)
+    if type(positionKey) ~= "string" or positionKey == "" then
+        return
+    end
+
+    local seen = {}
+    local function registerNode(node)
+        if not (node and node:IsA("GuiObject")) then
+            return
+        end
+
+        if seen[node] then
+            return
+        end
+
+        seen[node] = true
+        self._brandPositionKeyByGuiObject[node] = positionKey
+    end
+
+    registerNode(frame)
+
+    local root = surfaceGui or frame
+    if root then
+        for _, descendant in ipairs(root:GetDescendants()) do
+            registerNode(descendant)
+        end
+    end
+end
+
+function BrainrotUpgradeController:_tryRequestUpgradeFromGuiHit(inputObject)
+    local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui") or localPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then
+        return false
+    end
+
+    local screenPosition = self:_getInputScreenPosition(inputObject)
+    local guiObjects = playerGui:GetGuiObjectsAtPosition(screenPosition.X, screenPosition.Y)
+    for _, guiObject in ipairs(guiObjects) do
+        local positionKey = self._brandPositionKeyByGuiObject[guiObject]
+        if type(positionKey) == "string" and positionKey ~= "" then
+            self:_requestUpgrade(positionKey)
+            return true
+        end
+    end
+
+    return false
+end
+
+function BrainrotUpgradeController:_tryRequestUpgradeFromWorldHit(inputObject)
+    local camera = Workspace.CurrentCamera
+    if not camera then
+        return
+    end
+
+    local screenPosition = self:_getInputScreenPosition(inputObject)
+    local ray = camera:ViewportPointToRay(screenPosition.X, screenPosition.Y)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+    local filterList = {}
+    if localPlayer.Character then
+        table.insert(filterList, localPlayer.Character)
+    end
+    raycastParams.FilterDescendantsInstances = filterList
+
+    local result = Workspace:Raycast(ray.Origin, ray.Direction * 512, raycastParams)
+    local hitInstance = result and result.Instance or nil
+    local positionKey = self:_resolveBrandPositionKeyFromInstance(hitInstance)
+    if positionKey then
+        self:_requestUpgrade(positionKey)
+    end
+end
+
+function BrainrotUpgradeController:_handleGlobalInputBegan(inputObject, _gameProcessedEvent)
+    if not isUpgradeInput(inputObject) then
+        return
+    end
+
+    if UserInputService:GetFocusedTextBox() then
+        return
+    end
+
+    if self:_tryRequestUpgradeFromGuiHit(inputObject) then
+        return
+    end
+
+    self:_tryRequestUpgradeFromWorldHit(inputObject)
 end
 
 function BrainrotUpgradeController:_bindHomeBrands()
     self:_clearBrandBindings()
+    self._brandPositionKeyByInstance = setmetatable({}, { __mode = "k" })
+    self._brandPositionKeyByGuiObject = setmetatable({}, { __mode = "k" })
 
     local homeModel = self:_getAssignedHomeModel()
     local homeBase = homeModel and homeModel:FindFirstChild(tostring((GameConfig.HOME or {}).HomeBaseName or "HomeBase")) or nil
@@ -431,7 +595,7 @@ function BrainrotUpgradeController:_bindHomeBrands()
     local arrowName = tostring((GameConfig.BRAINROT or {}).BrandArrowName or "Arrow")
 
     local foundAny = false
-    for _, descendant in ipairs(homeBase:GetDescendants()) do
+    for _, descendant in ipairs(homeModel:GetDescendants()) do
         local brandIndex = descendant:IsA("BasePart") and parseTrailingIndex(descendant.Name, brandPrefix) or nil
         if brandIndex and isHomeSlotUnlocked(descendant) then
             local positionKey = resolveHomeSlotPositionKey(descendant, brandPrefix, descendant)
@@ -446,8 +610,16 @@ function BrainrotUpgradeController:_bindHomeBrands()
                         surfaceGui = descendant:FindFirstChildWhichIsA("SurfaceGui", true)
                     end
                 end
+                if surfaceGui then
+                    pcall(function()
+                        surfaceGui.Active = true
+                    end)
+                end
+                self._brandPositionKeyByInstance[descendant] = positionKey
 
                 local frame = findFirstGuiObjectByName(surfaceGui, frameName)
+                self:_bindBrandDetector(positionKey, descendant)
+                self:_registerBrandGuiObjects(positionKey, surfaceGui, frame)
                 local arrow = findFirstImageLabelByName(frame or surfaceGui, arrowName)
                 self:_bindBrandClick(positionKey, frame)
                 if arrow then
@@ -530,6 +702,10 @@ function BrainrotUpgradeController:Start()
     table.insert(self._persistentConnections, localPlayer:GetAttributeChangedSignal("HomeId"):Connect(function()
         self._homeId = tostring(localPlayer:GetAttribute("HomeId") or "")
         self:_queueRebind()
+    end))
+
+    table.insert(self._persistentConnections, UserInputService.InputBegan:Connect(function(inputObject, gameProcessedEvent)
+        self:_handleGlobalInputBegan(inputObject, gameProcessedEvent)
     end))
 
     table.insert(self._persistentConnections, Workspace.DescendantAdded:Connect(function(descendant)

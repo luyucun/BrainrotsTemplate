@@ -40,7 +40,7 @@ HomeExpansionService._brainrotService = nil
 HomeExpansionService._requestHomeExpansionEvent = nil
 HomeExpansionService._homeExpansionFeedbackEvent = nil
 HomeExpansionService._lastRequestClockByUserId = {}
-HomeExpansionService._didWarnMissingTemplate = false
+HomeExpansionService._didWarnMissingStaticFloorByLevel = {}
 
 local ORIGINAL_TRANSPARENCY_ATTRIBUTE = "HomeExpansionOriginalTransparency"
 local ORIGINAL_CAN_COLLIDE_ATTRIBUTE = "HomeExpansionOriginalCanCollide"
@@ -237,26 +237,6 @@ function HomeExpansionService:_getHomeBase(homeModel)
     return homeModel:FindFirstChild(tostring((GameConfig.HOME or {}).HomeBaseName or "HomeBase"))
 end
 
-function HomeExpansionService:_getHomeFloorTemplate()
-    local templateName = tostring(getHomeExpansionConfig().TemplateName or "HomeFloor")
-    local template = ReplicatedStorage:FindFirstChild(templateName)
-    if template then
-        return template
-    end
-
-    if not self._didWarnMissingTemplate then
-        self._didWarnMissingTemplate = true
-        warn(string.format("[HomeExpansionService] ReplicatedStorage 下缺少楼层模板 %s", templateName))
-    end
-
-    return nil
-end
-
-function HomeExpansionService:_getRuntimeFloorName(floorLevel)
-    local prefix = tostring(getHomeExpansionConfig().RuntimeFloorPrefix or "HomeFloorRuntime")
-    return string.format("%s%02d", prefix, math.max(0, math.floor(tonumber(floorLevel) or 0)))
-end
-
 function HomeExpansionService:_getGlobalSlotIndex(floorLevel, localSlotIndex)
     local slotsPerFloor = math.max(1, math.floor(tonumber(getHomeExpansionConfig().SlotsPerFloor) or 10))
     local parsedFloorLevel = math.max(1, math.floor(tonumber(floorLevel) or 1))
@@ -285,93 +265,114 @@ function HomeExpansionService:_buildUnlockedLocalSlotMap(unlockedExpansionCount)
 
     return unlockedLocalSlotMap
 end
+function HomeExpansionService:_getStaticFloorNameCandidates(floorLevel)
+    local parsedFloorLevel = math.max(2, math.floor(tonumber(floorLevel) or 2))
+    local config = getHomeExpansionConfig()
+    local result = {}
+    local seen = {}
 
-function HomeExpansionService:_findRuntimeFloor(homeBase, floorLevel)
-    if not homeBase then
+    local function pushName(name)
+        if type(name) ~= "string" or name == "" or seen[name] then
+            return
+        end
+
+        seen[name] = true
+        table.insert(result, name)
+    end
+
+    local configuredNamesByLevel = config.StaticFloorNameByLevel
+    local configuredNames = type(configuredNamesByLevel) == "table" and configuredNamesByLevel[parsedFloorLevel] or nil
+    if type(configuredNames) == "string" then
+        pushName(configuredNames)
+    elseif type(configuredNames) == "table" then
+        for _, configuredName in ipairs(configuredNames) do
+            pushName(configuredName)
+        end
+    end
+
+    if parsedFloorLevel == 2 then
+        pushName("HomeFloor1")
+        pushName("HomeFloor01")
+    elseif parsedFloorLevel == 3 then
+        pushName("HomeFloor2")
+        pushName("HomeFloor02")
+        pushName("HomeFloor3")
+        pushName("HomeFloor03")
+    else
+        local staticFloorIndex = parsedFloorLevel - 1
+        pushName(string.format("HomeFloor%d", staticFloorIndex))
+        pushName(string.format("HomeFloor%02d", staticFloorIndex))
+    end
+
+    return result
+end
+
+function HomeExpansionService:_findRuntimeFloor(homeModel, floorLevel, suppressWarn)
+    if not homeModel then
         return nil
     end
 
-    local targetName = self:_getRuntimeFloorName(floorLevel)
-    local direct = homeBase:FindFirstChild(targetName)
-    if direct then
-        return direct
+    local parsedFloorLevel = math.max(2, math.floor(tonumber(floorLevel) or 2))
+    local candidateNames = self:_getStaticFloorNameCandidates(parsedFloorLevel)
+    for _, candidateName in ipairs(candidateNames) do
+        local direct = homeModel:FindFirstChild(candidateName)
+        if direct then
+            return direct
+        end
     end
 
-    local generatedAttributeName = tostring(getHomeExpansionConfig().RuntimeGeneratedFloorAttributeName or "HomeExpansionGeneratedFloor")
-    local floorLevelAttributeName = tostring(getHomeExpansionConfig().RuntimeFloorLevelAttributeName or "HomeExpansionFloorLevel")
-    for _, descendant in ipairs(homeBase:GetDescendants()) do
-        if descendant:GetAttribute(generatedAttributeName) == true and tonumber(descendant:GetAttribute(floorLevelAttributeName)) == tonumber(floorLevel) then
-            return descendant
+    for _, candidateName in ipairs(candidateNames) do
+        local nested = homeModel:FindFirstChild(candidateName, true)
+        if nested then
+            return nested
         end
+    end
+
+    if suppressWarn ~= true and self._didWarnMissingStaticFloorByLevel[parsedFloorLevel] ~= true then
+        self._didWarnMissingStaticFloorByLevel[parsedFloorLevel] = true
+        warn(string.format(
+            "[HomeExpansionService] 找不到预摆楼层模型（FloorLevel=%d, Candidates=%s, Home=%s）",
+            parsedFloorLevel,
+            table.concat(candidateNames, ", "),
+            tostring(homeModel.Name)
+        ))
     end
 
     return nil
 end
 
-function HomeExpansionService:_destroyRuntimeFloor(homeBase, floorLevel)
-    local runtimeFloor = self:_findRuntimeFloor(homeBase, floorLevel)
-    if runtimeFloor and runtimeFloor.Parent then
-        runtimeFloor:Destroy()
+function HomeExpansionService:_destroyRuntimeFloor(homeModel, floorLevel)
+    local floorRoot = self:_findRuntimeFloor(homeModel, floorLevel, true)
+    if floorRoot then
+        self:_applySlotVisibility(floorRoot, false)
     end
 end
 
-function HomeExpansionService:_clearRuntimeFloors(homeBase)
-    if not homeBase then
+function HomeExpansionService:_clearRuntimeFloors(homeModel)
+    if not homeModel then
         return
     end
 
-    local generatedAttributeName = tostring(getHomeExpansionConfig().RuntimeGeneratedFloorAttributeName or "HomeExpansionGeneratedFloor")
-    local runtimeFloorPrefix = tostring(getHomeExpansionConfig().RuntimeFloorPrefix or "HomeFloorRuntime")
-    local pendingDestroy = {}
-    for _, descendant in ipairs(homeBase:GetDescendants()) do
-        local isGeneratedFloor = descendant:GetAttribute(generatedAttributeName) == true
-        if not isGeneratedFloor and type(descendant.Name) == "string" then
-            isGeneratedFloor = string.match(descendant.Name, "^" .. runtimeFloorPrefix) ~= nil
-        end
-        if isGeneratedFloor then
-            table.insert(pendingDestroy, descendant)
-        end
-    end
-
-    table.sort(pendingDestroy, function(a, b)
-        return #a:GetFullName() > #b:GetFullName()
-    end)
-
-    for _, instance in ipairs(pendingDestroy) do
-        if instance and instance.Parent then
-            instance:Destroy()
-        end
+    local maxFloorLevel = math.max(1, math.floor(tonumber(getHomeExpansionConfig().MaxFloorLevel) or 3))
+    for floorLevel = 2, maxFloorLevel do
+        self:_destroyRuntimeFloor(homeModel, floorLevel)
     end
 end
 
-function HomeExpansionService:_ensureRuntimeFloor(homeBase, floorLevel)
-    local runtimeFloor = self:_findRuntimeFloor(homeBase, floorLevel)
-    if runtimeFloor and runtimeFloor.Parent then
-        return runtimeFloor
-    end
+function HomeExpansionService:_ensureRuntimeFloor(homeModel, floorLevel)
+    return self:_findRuntimeFloor(homeModel, floorLevel, false)
+end
 
-    local template = self:_getHomeFloorTemplate()
-    if not template then
+function HomeExpansionService:_configureStaticFloor(homeModel, floorLevel, unlockedLocalSlotMap)
+    local floorRoot = self:_ensureRuntimeFloor(homeModel, floorLevel)
+    if not floorRoot then
         return nil
     end
 
-    runtimeFloor = template:Clone()
-    runtimeFloor.Name = self:_getRuntimeFloorName(floorLevel)
-    runtimeFloor.Parent = homeBase
-
-    local generatedAttributeName = tostring(getHomeExpansionConfig().RuntimeGeneratedFloorAttributeName or "HomeExpansionGeneratedFloor")
-    local floorLevelAttributeName = tostring(getHomeExpansionConfig().RuntimeFloorLevelAttributeName or "HomeExpansionFloorLevel")
-    runtimeFloor:SetAttribute(generatedAttributeName, true)
-    runtimeFloor:SetAttribute(floorLevelAttributeName, math.max(1, math.floor(tonumber(floorLevel) or 1)))
-
-    local homeBasePivot = getInstancePivotCFrame(homeBase)
-    if homeBasePivot then
-        local floorOffset = math.max(0, math.floor(tonumber(floorLevel) or 1) - 1)
-        local verticalOffset = (tonumber(getHomeExpansionConfig().FloorVerticalOffset) or 32) * floorOffset
-        setInstancePivotCFrame(runtimeFloor, homeBasePivot * CFrame.new(0, verticalOffset, 0))
-    end
-
-    return runtimeFloor
+    local hasUnlockedSlots = type(unlockedLocalSlotMap) == "table" and next(unlockedLocalSlotMap) ~= nil
+    self:_applySlotVisibility(floorRoot, hasUnlockedSlots)
+    self:_configureRuntimeFloor(floorRoot, floorLevel, unlockedLocalSlotMap)
+    return floorRoot
 end
 
 function HomeExpansionService:_isInsideGeneratedFloor(root, descendant)
@@ -626,18 +627,13 @@ function HomeExpansionService:ApplyHomeLayout(player, assignedHome)
     homeState.UnlockedExpansionCount = unlockedExpansionCount
 
     self:_configureBaseFloor(homeBase)
+    self:_clearRuntimeFloors(homeModel)
 
     local unlockedLocalSlotMap = self:_buildUnlockedLocalSlotMap(unlockedExpansionCount)
     local maxFloorLevel = math.max(1, math.floor(tonumber(getHomeExpansionConfig().MaxFloorLevel) or 3))
 
     for floorLevel = 2, maxFloorLevel do
-        local floorUnlockedMap = unlockedLocalSlotMap[floorLevel]
-        if type(floorUnlockedMap) == "table" and next(floorUnlockedMap) ~= nil then
-            local runtimeFloor = self:_ensureRuntimeFloor(homeBase, floorLevel)
-            self:_configureRuntimeFloor(runtimeFloor, floorLevel, floorUnlockedMap)
-        else
-            self:_destroyRuntimeFloor(homeBase, floorLevel)
-        end
+        self:_configureStaticFloor(homeModel, floorLevel, unlockedLocalSlotMap[floorLevel])
     end
 
     self:_refreshBaseUpgradeUiForCount(homeBase, unlockedExpansionCount)
@@ -728,6 +724,20 @@ function HomeExpansionService:Init(dependencies)
             self:_handleRequestHomeExpansion(player)
         end)
     end
+
+    local allHomes = self._homeService and self._homeService.GetAllHomes and self._homeService:GetAllHomes() or {}
+    for _, homeModel in ipairs(allHomes) do
+        local homeBase = self:_getHomeBase(homeModel)
+        if homeBase then
+            self:_clearRuntimeFloors(homeModel)
+            self:_configureBaseFloor(homeBase)
+            self:_refreshBaseUpgradeUiForCount(homeBase, 0)
+        end
+
+        if self._brainrotService and self._brainrotService.ResetHomeWorldUi then
+            self._brainrotService:ResetHomeWorldUi(homeModel)
+        end
+    end
 end
 
 function HomeExpansionService:OnPlayerReady(player, assignedHome)
@@ -745,9 +755,13 @@ function HomeExpansionService:OnPlayerRemoving(player, assignedHome)
         return
     end
 
-    self:_clearRuntimeFloors(homeBase)
+    self:_clearRuntimeFloors(homeModel)
     self:_configureBaseFloor(homeBase)
     self:_refreshBaseUpgradeUiForCount(homeBase, 0)
+
+    if self._brainrotService and self._brainrotService.ResetHomeWorldUi then
+        self._brainrotService:ResetHomeWorldUi(homeModel)
+    end
 end
 
 return HomeExpansionService
