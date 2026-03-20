@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = {}
 
-GameConfig.VERSION = "V2.8"
+GameConfig.VERSION = "V2.9"
 
 GameConfig.MAX_SERVER_PLAYERS = 5
 
@@ -268,6 +268,19 @@ GameConfig.SOCIAL = {
 	PromptHoldDuration = 1,
 }
 
+
+GameConfig.GIFT = {
+	PromptName = "GiftPrompt",
+	PromptActionText = "Gift",
+	PromptObjectText = "",
+	PromptHoldDuration = 1,
+	PromptMaxActivationDistance = 10,
+	PromptRequiresLineOfSight = false,
+	RequestDebounceSeconds = 0.2,
+	RequestExpireSeconds = 30,
+	DeclineCooldownSeconds = 300,
+}
+
 GameConfig.FRIEND_BONUS = {
 	PercentPerFriend = 10,
 	MaxFriendCount = 4,
@@ -391,3 +404,4 @@ GameConfig.DEFAULT_PLAYER_DATA = {
 }
 
 return GameConfig
+

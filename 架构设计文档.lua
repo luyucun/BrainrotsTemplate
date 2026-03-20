@@ -1,15 +1,15 @@
---[[
+﻿--[[
 =====================================================
-游戏整体架构设计文档（V2.7）
+游戏整体架构设计文档（V2.9）
 =====================================================
 
 项目名称: BrainrotsTemplate
-当前版本: V2.7
-文档更新时间: 2026-03-19
+当前版本: V2.9
+文档更新时间: 2026-03-20
 
 一、核心分层
 1. Shared 配置层（ReplicatedStorage/Shared）
-- GameConfig: 全局配置，集中管理家园、家园拓展、DataStore、脑红、武器、Rebirth、全局排行榜、特殊事件、脑红升级、脑红出售参数等。
+- GameConfig: 全局配置，集中管理家园、家园拓展、DataStore、脑红、武器、Rebirth、全局排行榜、特殊事件、脑红升级、脑红出售、赠送礼物参数等。
 - BrainrotConfig: 脑红静态配置表，来源于 Excel 脑红表同步结果。
 - RebirthConfig: Rebirth 静态配置表。
 - BrainrotDisplayConfig: 脑红品质/稀有度展示名与渐变路径映射。
@@ -31,6 +31,7 @@
 - WeaponKnockbackService: 挥击命中后的击飞逻辑，不扣血、不击杀。
 - GlobalLeaderboardService: 全局总产速榜/总时长榜刷新、榜单 UI 填充、玩家个人卡片属性同步。
 - SpecialEventService: V2.4.1 特殊事件调度、跨服统一时间片选取、客户端状态同步、GM 手动触发。
+- GiftService: V2.9 新增；角色 Gift Prompt 挂载、赠送请求生命周期、拒绝冷却、接受/拒绝服务端校验与脑红转移。
 
 3. 客户端层（StarterPlayerScripts）
 - MainClient: 客户端启动入口与首次请求同步。
@@ -49,6 +50,7 @@
 - RebirthController: Rebirth 面板、进度、请求与反馈表现。
 - GlobalLeaderboardController: 本地玩家卡片刷新，读取玩家 Attribute 更新两个排行榜下方个人信息区域。
 - SpecialEventController: 监听特殊事件同步，在本地给自己角色挂事件模板，并本地复制 Lighting 事件天空盒子节点。
+- GiftController: V2.9 新增；Gift Prompt 本地可见性过滤、Gift 弹窗绑定、头像/文案渲染，以及拒绝冷却隐藏逻辑。
 
 二、近阶段功能要点
 1. V2.1 / V2.1.1
@@ -95,6 +97,12 @@
 - BaseUpgrade 世界 UI 的 CurrentGold / Level 文案由服务端直接刷新；客户端只负责点击请求和失败音效表现。
 - BrainrotService 与 BrainrotUpgradeController 改为优先读取楼层属性，把二层三层重复的 Position1/Claim1/Brand1 映射为全局 Position11~30。
 
+8. V2.9 赠送礼物
+- 只有手持脑红的玩家靠近其他玩家时，Gift Prompt 才会在本地显示，并要求长按 E 1 秒发起赠送。
+- GiftService 负责维护 pending request、30 秒过期、接收方 Accept / Decline / Close 决策，以及 A 被 B 拒绝后的 5 分钟冷却。
+- GiftController 负责强制打开 Main/Gift、复用 ModalController 的打开/关闭与 Blur 表现、渲染赠送者头像/名字/固定文案，并在拒绝冷却期间隐藏对应目标的 Prompt。
+- BrainrotService 新增当前已装备脑红查询与脑红实例转移能力；真正扣除发送方背包并发给接收方始终由服务端完成。
+
 三、关键数据结构
 1. 持久化 PlayerData
 - Currency.Coins
@@ -127,6 +135,7 @@
 - GlobalLeaderboardService._memoryScoresByBoardKey / _cachedEntriesByBoardKey / _userInfoByUserId
 - QuickTeleportService._lastRequestClockByUserId
 - SpecialEventService._activeEventsByRuntimeKey / _scheduleState
+- GiftService._promptByUserId / _pendingRequestById / _pendingRequestIdBySenderUserId / _pendingRequestIdByRecipientUserId / _declineCooldownBySenderUserId
 
 四、关键同步协议
 1. CoinChanged
@@ -161,6 +170,11 @@
 - 服务端必须先校验 RunService:IsStudio()，再校验 brainrotId 是否真实存在，成功后统一复用 BrainrotService:GrantBrainrot(player, brainrotId, 1, "StudioDebug")。
 - StudioBrainrotGrantFeedback 只负责本地测试面板提示，不承载正式玩法逻辑。
 
+7. BrainrotGiftOffer / RequestBrainrotGiftDecision / BrainrotGiftFeedback
+- BrainrotGiftOffer 由服务端发给接收方，强制打开 Gift 弹窗，并同步 senderUserId / senderName / brainrotName 等只读展示数据。
+- RequestBrainrotGiftDecision 只接受 requestId 与 decision；服务端重新校验 request 是否仍有效、接收方是否匹配、赠送脑红实例是否仍真实存在于发送方背包。
+- BrainrotGiftFeedback 用于同步 Requested / Accepted / Declined / Cancelled / Expired 等状态，以及拒绝后的 cooldownExpiresAt；客户端只据此更新本地 Prompt 和弹窗表现，不承载可信业务真值。
+
 五、服务端初始化顺序（MainServer）
 1. RemoteEventService:Init()
 2. PlayerDataService:Init()
@@ -177,9 +191,10 @@
 13. SocialService:Init(...)
 14. GlobalLeaderboardService:Init(...)
 15. SpecialEventService:Init(...)
-16. PlayerAdded 流程: 分配家园 -> 读档 -> 恢复武器 -> 初始化好友加成 -> 初始化 Rebirth 属性 -> 应用家园拓展楼层与 BaseUpgrade UI -> 恢复脑红/离线收益/图鉴历史/Brand 升级台 -> 社交同步 -> 同步当前活跃特殊事件状态 -> 金币同步 -> 排行榜个人卡刷新
-17. PlayerRemoving 流程: 解绑 -> 武器清理 -> 排行榜快照刷新 -> 好友加成重算 -> 脑红运行态清理 -> 回收家园拓展运行态 -> Rebirth 清理 -> 社交清理 -> 回收家园 -> 保存数据
-18. BindToClose: 先刷新全局排行榜快照，再保存所有玩家数据
+16. GiftService:Init(...)
+17. PlayerAdded 流程: 分配家园 -> 读档 -> 恢复武器 -> 初始化好友加成 -> 初始化 Rebirth 属性 -> 应用家园拓展楼层与 BaseUpgrade UI -> 恢复脑红/离线收益/图鉴历史/Brand 升级台 -> 挂载 Gift Prompt -> 社交同步 -> 同步当前活跃特殊事件状态 -> 金币同步 -> 排行榜个人卡刷新
+18. PlayerRemoving 流程: 解绑 -> 武器清理 -> 排行榜快照刷新 -> 好友加成重算 -> 脑红运行态清理 -> 清理 Gift 请求与 Prompt -> 回收家园拓展运行态 -> Rebirth 清理 -> 社交清理 -> 回收家园 -> 保存数据
+19. BindToClose: 先刷新全局排行榜快照，再保存所有玩家数据
 
 六、维护约束
 1. 未来若新增或修改 RemoteEvent，必须同步更新：
@@ -199,6 +214,7 @@
 10. V2.6 起，脑红出售价格、出售结果与背包实例是否合法，全部只以服务端计算与存档为准。
 11. V2.7 起，多楼层拓展点位统一由服务端按楼层属性映射成 Position11~30，客户端不可把二层/三层重复命名当成同一个位置。
 12. Studio 调试脑红发放只允许在 Studio 环境下使用，正式服即便存在同名 Remote 也必须由服务端拒绝。
+13. V2.9 起，赠送脑红只以服务端当前装备实例、背包真实实例、接收方确认结果与拒绝冷却为准，客户端不可直接认定赠送成功。
 
 =====================================================
 文档结束

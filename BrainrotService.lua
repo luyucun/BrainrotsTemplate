@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: BrainrotService
 脚本文件: BrainrotService.lua
 脚本类型: ModuleScript
@@ -55,6 +55,8 @@ BrainrotService._claimCashFeedbackEvent = nil
 BrainrotService._promptConnectionsByUserId = {}
 BrainrotService._placedPromptStateByUserId = {}
 BrainrotService._toolConnectionsByUserId = {}
+BrainrotService._toolRefreshConnectionsByUserId = {}
+BrainrotService._toolRefreshBurstSerialByUserId = {}
 BrainrotService._claimConnectionsByUserId = {}
 BrainrotService._claimTouchDebounceByUserId = {}
 BrainrotService._upgradeRequestClockByUserId = {}
@@ -1401,6 +1403,104 @@ function BrainrotService:_clearToolConnections(player)
 	self:_disconnectConnections(self._toolConnectionsByUserId[userId])
 	self._toolConnectionsByUserId[userId] = nil
 end
+function BrainrotService:_clearToolRefreshWatchers(player)
+	local userId = player.UserId
+	self:_disconnectConnections(self._toolRefreshConnectionsByUserId[userId])
+	self._toolRefreshConnectionsByUserId[userId] = nil
+	self._toolRefreshBurstSerialByUserId[userId] = (self._toolRefreshBurstSerialByUserId[userId] or 0) + 1
+end
+
+function BrainrotService:_countBrainrotTools(player)
+	local toolCount = 0
+	for _, container in ipairs({
+		player and player:FindFirstChild("Backpack") or nil,
+		player and player.Character or nil,
+	}) do
+		if container then
+			for _, child in ipairs(container:GetChildren()) do
+				if child:IsA("Tool") and child:GetAttribute("BrainrotTool") == true then
+					toolCount += 1
+				end
+			end
+		end
+	end
+
+	return toolCount
+end
+
+function BrainrotService:_ensureBrainrotToolsSynced(player)
+	if not (player and player.Parent) then
+		return false
+	end
+
+	local _playerData, brainrotData = self:_getOrCreateDataContainers(player)
+	if not brainrotData then
+		return false
+	end
+
+	local expectedToolCount = #brainrotData.Inventory
+	local actualToolCount = self:_countBrainrotTools(player)
+	if expectedToolCount == actualToolCount then
+		return false
+	end
+
+	local equippedInstanceId = math.max(0, math.floor(tonumber(brainrotData.EquippedInstanceId) or 0))
+	self:_refreshBrainrotTools(player)
+
+	if equippedInstanceId > 0 then
+		task.defer(function()
+			self:_equipBrainrotToolByInstanceId(player, equippedInstanceId)
+		end)
+	end
+
+	self:PushBrainrotState(player)
+	return true
+end
+
+function BrainrotService:_scheduleToolRefreshBurst(player, durationSeconds, intervalSeconds)
+	if not (player and player.Parent) then
+		return
+	end
+
+	local userId = player.UserId
+	local duration = math.max(0, tonumber(durationSeconds) or 0)
+	local interval = math.max(0.1, tonumber(intervalSeconds) or 0.5)
+	self._toolRefreshBurstSerialByUserId[userId] = (self._toolRefreshBurstSerialByUserId[userId] or 0) + 1
+	local burstSerial = self._toolRefreshBurstSerialByUserId[userId]
+
+	task.spawn(function()
+		local deadline = os.clock() + duration
+		repeat
+			if not player.Parent or self._toolRefreshBurstSerialByUserId[userId] ~= burstSerial then
+				return
+			end
+
+			self:_ensureBrainrotToolsSynced(player)
+			task.wait(interval)
+		until os.clock() >= deadline
+	end)
+end
+
+function BrainrotService:_bindToolRefreshWatchers(player)
+	self:_clearToolRefreshWatchers(player)
+
+	local userId = player.UserId
+	local connectionList = {}
+	self._toolRefreshConnectionsByUserId[userId] = connectionList
+
+	table.insert(connectionList, player.CharacterAdded:Connect(function()
+		task.defer(function()
+			self:_scheduleToolRefreshBurst(player, 8, 0.5)
+		end)
+	end))
+
+	table.insert(connectionList, player.ChildAdded:Connect(function(child)
+		if child and (child.Name == "Backpack" or child:IsA("Backpack")) then
+			self:_scheduleToolRefreshBurst(player, 8, 0.5)
+		end
+	end))
+end
+
 
 function BrainrotService:_clearRuntimePlaced(player)
 	self:_stopAllIdleTracks(player)
@@ -1945,6 +2045,7 @@ function BrainrotService:_createBrainrotTool(player, inventoryItem)
 	tool.CanBeDropped = false
 	tool.TextureId = brainrotDefinition.Icon or ""
 	tool.RequiresHandle = true
+	tool.ManualActivationOnly = true
 	tool:SetAttribute("BrainrotTool", true)
 	tool:SetAttribute("BrainrotId", brainrotId)
 	tool:SetAttribute("BrainrotInstanceId", instanceId)
@@ -2044,6 +2145,118 @@ function BrainrotService:_equipBrainrotToolByInstanceId(player, instanceId)
 
 	humanoid:EquipTool(tool)
 	return true
+end
+
+function BrainrotService:GetEquippedGiftBrainrotInfo(player)
+	local equippedTool = self:_getEquippedBrainrotTool(player)
+	if not equippedTool then
+		return nil
+	end
+
+	local instanceId = math.max(0, math.floor(tonumber(equippedTool:GetAttribute("BrainrotInstanceId")) or 0))
+	local brainrotId = math.max(0, math.floor(tonumber(equippedTool:GetAttribute("BrainrotId")) or 0))
+	if instanceId <= 0 or brainrotId <= 0 then
+		return nil
+	end
+
+	local _playerData, brainrotData = self:_getOrCreateDataContainers(player)
+	if not brainrotData then
+		return nil
+	end
+
+	local inventoryIndex = findInventoryIndexByInstanceId(brainrotData.Inventory, instanceId)
+	if not inventoryIndex then
+		return nil
+	end
+
+	local inventoryItem = brainrotData.Inventory[inventoryIndex]
+	local brainrotDefinition = BrainrotConfig.ById[brainrotId]
+	if not (inventoryItem and brainrotDefinition) then
+		return nil
+	end
+
+	return {
+		instanceId = instanceId,
+		brainrotId = brainrotId,
+		brainrotName = tostring(brainrotDefinition.Name or equippedTool.Name or "Brainrot"),
+		level = normalizeBrainrotLevel(inventoryItem.Level),
+	}
+end
+
+function BrainrotService:TransferBrainrotInstance(senderPlayer, recipientPlayer, instanceId, reason)
+	if not (senderPlayer and recipientPlayer) then
+		return false, "InvalidPlayers", nil
+	end
+
+	if senderPlayer == recipientPlayer or senderPlayer.UserId == recipientPlayer.UserId then
+		return false, "CannotGiftSelf", nil
+	end
+
+	local _senderPlayerData, senderBrainrotData = self:_getOrCreateDataContainers(senderPlayer)
+	local _recipientPlayerData, recipientBrainrotData = self:_getOrCreateDataContainers(recipientPlayer)
+	if not senderBrainrotData or not recipientBrainrotData then
+		return false, "PlayerDataNotReady", nil
+	end
+
+	local targetInstanceId = math.max(0, math.floor(tonumber(instanceId) or 0))
+	if targetInstanceId <= 0 then
+		return false, "InvalidInstanceId", nil
+	end
+
+	local inventoryIndex = findInventoryIndexByInstanceId(senderBrainrotData.Inventory, targetInstanceId)
+	if not inventoryIndex then
+		return false, "BrainrotNotFound", nil
+	end
+
+	local inventoryItem = senderBrainrotData.Inventory[inventoryIndex]
+	local brainrotId = math.max(0, math.floor(tonumber(inventoryItem and inventoryItem.BrainrotId) or 0))
+	local level = normalizeBrainrotLevel(inventoryItem and inventoryItem.Level)
+	local brainrotDefinition = BrainrotConfig.ById[brainrotId]
+	if not brainrotDefinition then
+		return false, "BrainrotConfigMissing", nil
+	end
+
+	local previousEquippedInstanceId = math.max(0, math.floor(tonumber(senderBrainrotData.EquippedInstanceId) or 0))
+	table.remove(senderBrainrotData.Inventory, inventoryIndex)
+	if previousEquippedInstanceId == targetInstanceId then
+		senderBrainrotData.EquippedInstanceId = 0
+	end
+
+	local recipientInstanceId = math.max(1, math.floor(tonumber(recipientBrainrotData.NextInstanceId) or 1))
+	recipientBrainrotData.NextInstanceId = recipientInstanceId + 1
+	recipientBrainrotData.StarterGranted = true
+	self:_markBrainrotUnlocked(recipientBrainrotData, brainrotId)
+	table.insert(recipientBrainrotData.Inventory, {
+		InstanceId = recipientInstanceId,
+		BrainrotId = brainrotId,
+		Level = level,
+	})
+
+	local reEquipInstanceId = 0
+	if previousEquippedInstanceId > 0 and previousEquippedInstanceId ~= targetInstanceId then
+		if findInventoryIndexByInstanceId(senderBrainrotData.Inventory, previousEquippedInstanceId) then
+			reEquipInstanceId = previousEquippedInstanceId
+		end
+	end
+
+	self:_refreshBrainrotTools(senderPlayer)
+	self:_refreshBrainrotTools(recipientPlayer)
+	if reEquipInstanceId > 0 then
+		task.defer(function()
+			self:_equipBrainrotToolByInstanceId(senderPlayer, reEquipInstanceId)
+		end)
+	end
+
+	self:PushBrainrotState(senderPlayer)
+	self:PushBrainrotState(recipientPlayer)
+
+	return true, tostring(reason or "Gift"), {
+		brainrotId = brainrotId,
+		brainrotName = tostring(brainrotDefinition.Name or "Brainrot"),
+		level = level,
+		senderInstanceId = targetInstanceId,
+		recipientInstanceId = recipientInstanceId,
+	}
 end
 
 function BrainrotService:GrantBrainrot(player, brainrotId, quantity, reason)
@@ -2281,6 +2494,7 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
 		return
 	end
 
+	self:_bindToolRefreshWatchers(player)
 	self:_ensureStarterInventory(playerData, brainrotData, placedBrainrots)
 	self:_syncUnlockedBrainrots(brainrotData, placedBrainrots)
 
@@ -2303,6 +2517,7 @@ function BrainrotService:OnPlayerReady(player, assignedHome)
 	self:_refreshAllBrandUi(player, placedBrainrots)
 	self:_refreshAllPlatformPrompts(player, placedBrainrots)
 	self:_updatePlayerTotalProductionSpeed(player, placedBrainrots)
+	self:_scheduleToolRefreshBurst(player, 8, 0.5)
 end
 
 function BrainrotService:OnHomeLayoutChanged(player, assignedHome)
@@ -2330,6 +2545,7 @@ function BrainrotService:OnPlayerRemoving(player)
 	self:_clearPromptConnections(player)
 	self:_clearClaimConnections(player)
 	self:_clearToolConnections(player)
+	self:_clearToolRefreshWatchers(player)
 	self:_clearBrandState(player)
 	self:_clearRuntimePlaced(player)
 	self._sellRequestClockByUserId[player.UserId] = nil
@@ -4695,3 +4911,4 @@ function BrainrotService:_playIdleAnimationForPlaced(player, positionKey, placed
 	end
 end
 return BrainrotService
+

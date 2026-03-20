@@ -1,9 +1,9 @@
---[[
+﻿--[[
 =====================================================
-RemoteEvent 当前列表（V2.7）
+RemoteEvent 当前列表（V2.9）
 =====================================================
 
-文档更新时间: 2026-03-19
+文档更新时间: 2026-03-20
 说明:
 - V2.3 全局排行榜未新增 RemoteEvent。
 - V2.4.1 特殊事件新增 2 个 RemoteEvent，用于同步客户端本地表现。
@@ -11,6 +11,7 @@ RemoteEvent 当前列表（V2.7）
 - V2.6 脑红出售新增 2 个 RemoteEvent，用于客户端出售单个/全部脑红与本地成功音效反馈。
 - V2.7 家园拓展新增 2 个 RemoteEvent，用于客户端请求购买下一个拓展格子与本地失败音效反馈。
 - V2.7 Studio 调试面板新增 2 个 RemoteEvent，仅 Studio 环境下用于测试发放脑红。
+- V2.9 赠送礼物新增 3 个 RemoteEvent，用于发送赠送请求、接收方确认，以及发起方/接收方反馈同步。
 - /event <事件Id> 为 GM 聊天命令，由服务端直接处理。
 
 一、事件树
@@ -43,6 +44,9 @@ ReplicatedStorage
     - BrainrotUpgradeFeedback
     - RequestBrainrotSell  [V2.6]
     - BrainrotSellFeedback [V2.6]
+    - BrainrotGiftOffer [V2.9]
+    - RequestBrainrotGiftDecision [V2.9]
+    - BrainrotGiftFeedback [V2.9]
     - RequestStudioBrainrotGrant [Studio Only]
     - StudioBrainrotGrantFeedback [Studio Only]
 
@@ -164,13 +168,30 @@ ReplicatedStorage
 - 状态值: Success / MissingHome / AlreadyMax / NotEnoughCoins / CurrencyFailed
 - 版本: V2.7 新增。
 
-25. RequestStudioBrainrotGrant（C -> S）
+25. BrainrotGiftOffer（S -> C）
+- 参数: requestId / senderUserId / senderName / brainrotId / brainrotLevel / brainrotName / createdAt / timestamp
+- 用途: 向接收方强制弹出 Gift 确认弹窗，并提供赠送者头像、名字和脑红名称渲染所需信息。
+- 版本: V2.9 新增。
+
+26. RequestBrainrotGiftDecision（C -> S）
+- 参数: payload.requestId / payload.decision
+- 用途: 接收方提交 Accept / Decline / Close 决策。
+- 校验: 服务端必须重新校验 requestId 真实存在、接收方身份匹配、赠送实例仍在发送方背包中，且不能把 Close 当成绕过校验的成功路径。
+- 版本: V2.9 新增。
+
+27. BrainrotGiftFeedback（S -> C）
+- 参数: status / requestId / targetUserId / senderUserId / recipientUserId / cooldownExpiresAt / brainrotName / timestamp
+- 用途: 同步赠送发起、接受、拒绝、取消、过期与 5 分钟拒绝冷却，供发起方隐藏 Prompt、供接收方关闭弹窗。
+- 状态值: Requested / Accepted / Declined / Cancelled / Expired / SenderBusy / TargetBusy / SenderNotHoldingBrainrot / InvalidRequest
+- 版本: V2.9 新增。
+
+28. RequestStudioBrainrotGrant（C -> S）
 - 参数: payload.brainrotId
 - 用途: 仅供 Studio 环境下的本地调试面板请求给当前玩家发放 1 个指定脑红。
 - 校验: 服务端必须校验当前运行环境为 Studio，且 brainrotId 必须真实存在于 BrainrotConfig.ById。
 - 版本: V2.7 开发调试新增。
 
-26. StudioBrainrotGrantFeedback（S -> C）
+29. StudioBrainrotGrantFeedback（S -> C）
 - 参数: status / brainrotId / brainrotName / grantedCount / timestamp
 - 用途: 返回 Studio 调试发放结果，供本地测试面板显示成功或失败提示。
 - 状态值: Success / NotStudio / InvalidBrainrotId / BrainrotNotFound / PlayerDataNotReady / GrantFailed
@@ -189,7 +210,8 @@ ReplicatedStorage
 - 打开/关闭 SellBrainrots 面板、Shop02/PrisonerTouch 触碰检测，全部在客户端本地处理。
 9. 脑红出售成功后，服务端会先加金币，再刷新 BrainrotStateSync；客户端仅根据 BrainrotSellFeedback 播放本地音效和自动关闭面板。
 10. V2.7 的 BaseUpgrade 世界 UI 文案由服务端直接刷新；客户端只发送 RequestHomeExpansion，并根据 HomeExpansionFeedback 做本地失败反馈。
-11. Studio 调试面板只允许在 Studio 环境下使用；即便客户端错误触发，请求也会被服务端以 NotStudio 拒绝。
+11. V2.9 的 Gift 弹窗强制由服务端赠送请求驱动；客户端只负责本地 UI 表现、Prompt 过滤和把 Accept / Decline / Close 决策回传。
+12. Studio 调试面板只允许在 Studio 环境下使用；即便客户端错误触发，请求也会被服务端以 NotStudio 拒绝。
 
 四、维护约束
 1. 当 RemoteEvent 发生变化时，必须同步更新：
@@ -204,10 +226,14 @@ ReplicatedStorage
 5. RequestBrainrotUpgrade 不能直接相信客户端提交的等级、费用或金币，服务端必须重新计算。
 6. RequestBrainrotSell 不能直接相信客户端提交的售价、脑红等级、脑红配置或金币结果，服务端必须重新计算。
 7. RequestHomeExpansion 不能直接相信客户端提交的楼层、价格、位置或已解锁数量，服务端必须只按下一档配置顺序处理。
-8. RequestStudioBrainrotGrant 只允许用于 Studio 调试，不可作为正式玩法逻辑入口。
+8. RequestBrainrotGiftDecision 不能直接相信客户端提交的赠送者、脑红名字、脑红等级或结果状态，服务端必须只按 pending request 和真实背包实例处理。
+9. RequestStudioBrainrotGrant 只允许用于 Studio 调试，不可作为正式玩法逻辑入口。
 
 =====================================================
 列表结束
 =====================================================
 ]]
+
+
+
 

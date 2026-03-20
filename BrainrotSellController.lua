@@ -76,6 +76,8 @@ local IndexController = require(indexControllerModule)
 local BrainrotSellController = {}
 BrainrotSellController.__index = BrainrotSellController
 
+local STARTUP_WARNING_GRACE_SECONDS = 2
+
 local function resolveQualityDisplayInfo(qualityId)
     local parsedId = math.floor(tonumber(qualityId) or 0)
     local displayEntry = type(BrainrotDisplayConfig.Quality) == "table" and BrainrotDisplayConfig.Quality[parsedId] or nil
@@ -127,6 +129,7 @@ function BrainrotSellController.new(modalController)
     self._shopTouchReleaseSerial = 0
     self._successSoundTemplate = nil
     self._didWarnMissingSound = false
+    self._startupWarnAt = 0
     self._indexHelper = IndexController.new(nil)
     return self
 end
@@ -138,6 +141,10 @@ function BrainrotSellController:_warnOnce(key, message)
 
     self._didWarnByKey[key] = true
     warn(message)
+end
+
+function BrainrotSellController:_shouldWarnBindingIssues()
+    return os.clock() >= (self._startupWarnAt or 0)
 end
 
 function BrainrotSellController:_getPlayerGui()
@@ -521,43 +528,15 @@ end
 function BrainrotSellController:_bindShopTouch()
     self:_clearShopTouchBindings()
 
-    local touchPart = self:_findShopTouchPart()
-    if not touchPart then
-        self:_warnOnce("MissingSellTouch", "[BrainrotSellController] 找不到 Shop02/PrisonerTouch，出售界面触碰打开未绑定。")
-        return false
-    end
-
-    table.insert(self._shopTouchConnections, touchPart.Touched:Connect(function(hitPart)
-        if not self:_resolveCharacterFromTouchPart(hitPart) then
-            return
-        end
-
-        self._shopTouchPart = touchPart
-        self._shopTouchReleaseSerial = (tonumber(self._shopTouchReleaseSerial) or 0) + 1
-
-        if self._shopTouchLatchActive then
-            return
-        end
-
-        self._shopTouchLatchActive = true
-        self:OpenSellModal()
-    end))
-
-    table.insert(self._shopTouchConnections, touchPart.TouchEnded:Connect(function(hitPart)
-        if not self:_resolveCharacterFromTouchPart(hitPart) then
-            return
-        end
-
-        self:_queueShopTouchReleaseCheck()
-    end))
-
     return true
 end
 
 function BrainrotSellController:_bindMainUi()
     local mainGui = self:_getMainGui()
     if not mainGui then
-        self:_warnOnce("MissingMain", "[BrainrotSellController] 找不到 Main UI，出售面板暂不可用。")
+        if self:_shouldWarnBindingIssues() then
+            self:_warnOnce("MissingMain", "[BrainrotSellController] 找不到 Main UI，出售面板暂不可用。")
+        end
         self:_clearUiBindings()
         return false
     end
@@ -568,7 +547,9 @@ function BrainrotSellController:_bindMainUi()
     self._openButton = self:_resolveInteractiveNode(self._topSellRoot)
     self._sellRoot = self:_findDescendantByNames(mainGui, { "SellBrainrots" })
     if not self._sellRoot then
-        self:_warnOnce("MissingSellRoot", "[BrainrotSellController] 找不到 Main/SellBrainrots，出售面板未启动。")
+        if self:_shouldWarnBindingIssues() then
+            self:_warnOnce("MissingSellRoot", "[BrainrotSellController] 找不到 Main/SellBrainrots，出售面板未启动。")
+        end
         self:_clearUiBindings()
         return false
     end
@@ -589,7 +570,9 @@ function BrainrotSellController:_bindMainUi()
             self:OpenSellModal()
         end))
     else
-        self:_warnOnce("MissingOpenButton", "[BrainrotSellController] 找不到 Main/Top/Sell，顶部出售按钮未绑定。")
+        if self:_shouldWarnBindingIssues() then
+            self:_warnOnce("MissingOpenButton", "[BrainrotSellController] 找不到 Main/Top/Sell，顶部出售按钮未绑定。")
+        end
     end
 
     local closeInteractive = self:_resolveInteractiveNode(self._closeButton)
@@ -645,8 +628,8 @@ function BrainrotSellController:_scheduleRetryBind()
         local deadline = os.clock() + 12
         repeat
             local didBindUi = self:_bindMainUi()
-            self:_bindShopTouch()
-            if didBindUi then
+            local didBindShopTouch = self:_bindShopTouch()
+            if didBindUi and didBindShopTouch then
                 return
             end
             task.wait(1)
@@ -659,6 +642,7 @@ function BrainrotSellController:Start()
         return
     end
     self._started = true
+    self._startupWarnAt = os.clock() + STARTUP_WARNING_GRACE_SECONDS
 
     local eventsRoot = ReplicatedStorage:WaitForChild(RemoteNames.RootFolder)
     local brainrotEvents = eventsRoot:WaitForChild(RemoteNames.BrainrotEventsFolder)

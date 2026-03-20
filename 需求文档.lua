@@ -916,3 +916,18 @@ V2.8 自定义背包
 
 1.StarterGui - Main - Backpack是个frame，默认Visible是false，当背包中有内容时改成true
 2.Backpack - ItemListFrame - ArmyTemplate是背包内容模板，ArmyTemplate - Icon是图标，ArmyTemplate - Name是名字
+
+V2.9 赠送礼物功能
+概述：玩家可以在游戏中赠送其他玩家礼物，注意只能赠送脑红
+
+核心逻辑是：
+1.玩家如果手中拿着脑红的情况下（注意这个是大前提），靠近其他玩家，需要在其他玩家身上出现交互按钮，长按E键1秒完成赠送请求，交互文本是固定的Gift
+2.玩家向其他玩家发起赠送后，需要强制在其他玩家的界面弹出弹框：
+    2.1StarterGui - Main - Gift显示出来（visible改成true），注意显示出来时要有打开动效，关闭时也要有关闭动效，打开状态下隐藏ui并显示blur，这都是项目现在内置的统一的表现逻辑
+    2.2玩家点击Gift - Window - Title - CloseButton是关闭按钮，点击关闭弹框，注意鼠标移动到按钮上的时候，按钮要放大旋转，然后按下的时候有按下效果
+    2.3Gift - Window - ButtonsAcceptButton是接受按钮，点击后接受礼物，如果接受礼物，则立刻关闭弹框，并获得这个脑红，从对方背包中扣除
+    2.4Gift - Window - DeclineButton是拒绝按钮，点击后拒绝接受礼物，关闭弹框即可
+    2.5注意：如果对方拒绝了接受礼物，比如A赠送B，B拒绝了，那么5分钟内A再靠近B，在B身上不再出现按钮，注意是5分钟内
+    2.6Gift - Window - Content - PortraitFrame - PortraitImage是用来显示赠送者的头像的，替换成赠送者的头像
+    2.7Gift - Window - Content - PortraitFrame - Info - SenderText是textlabel，用于显示赠送者的玩家名字
+    2.8Gift - Window - Content - PortraitFrame - Info - MessageText是赠送文本，内容固定是：xxxx wants to give you: [yyyy]! Do you accept?其中xxxx是赠送者的名字，yyy是赠送的脑红的名字

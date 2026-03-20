@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: ModalController
 脚本文件: ModalController.lua
 脚本类型: ModuleScript
@@ -89,6 +89,7 @@ function ModalController.new()
     self._hiddenNodeRefCountByNode = {}
     self._activeTweensByModalKey = {}
     self._animationSerialByModalKey = {}
+    self._visibilityChangedEvent = Instance.new("BindableEvent")
     self._didWarnMissingBlur = false
     return self
 end
@@ -179,6 +180,26 @@ function ModalController:IsModalOpen(modalKey)
     return self._openModals[modalKey] ~= nil
 end
 
+function ModalController:IsNodeHiddenByModal(node)
+    if not node then
+        return false
+    end
+
+    return (tonumber(self._hiddenNodeRefCountByNode[node]) or 0) > 0
+end
+
+function ModalController:GetVisibilityChangedEvent()
+    local bindableEvent = self._visibilityChangedEvent
+    return bindableEvent and bindableEvent.Event or nil
+end
+
+function ModalController:_notifyVisibilityChanged(modalKey, isOpen)
+    local bindableEvent = self._visibilityChangedEvent
+    if bindableEvent then
+        bindableEvent:Fire(modalKey, isOpen == true)
+    end
+end
+
 function ModalController:OpenModal(modalKey, modalRoot, options)
     if type(modalKey) ~= "string" or modalKey == "" or not modalRoot then
         return false
@@ -204,6 +225,7 @@ function ModalController:OpenModal(modalKey, modalRoot, options)
         self:_retainHiddenNodes(hiddenNodes)
     end
 
+    self:_notifyVisibilityChanged(modalKey, true)
     self:_setBlurEnabled(true)
     self:_stopTweens(modalKey)
 
@@ -268,6 +290,7 @@ function ModalController:CloseModal(modalKey, options)
         didFinalize = true
 
         self:_releaseHiddenNodes(hiddenNodes)
+        self:_notifyVisibilityChanged(modalKey, false)
         if next(self._openModals) == nil then
             self:_setBlurEnabled(false)
         end

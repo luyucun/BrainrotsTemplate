@@ -38,6 +38,9 @@ local FormatUtil = requireSharedModule("FormatUtil")
 local GlobalLeaderboardController = {}
 GlobalLeaderboardController.__index = GlobalLeaderboardController
 
+local STARTUP_SILENT_REFRESH_DELAYS = { 0, 0.25, 1, 2 }
+local STARTUP_WARNING_GRACE_SECONDS = STARTUP_SILENT_REFRESH_DELAYS[#STARTUP_SILENT_REFRESH_DELAYS]
+
 local function findFirstDescendantByNames(root, names)
     if not root then
         return nil
@@ -98,6 +101,7 @@ function GlobalLeaderboardController.new()
     self._connections = {}
     self._didWarnByKey = {}
     self._localAvatarImage = nil
+    self._startupWarnAt = 0
     return self
 end
 
@@ -126,11 +130,17 @@ function GlobalLeaderboardController:_getAttributeName(attributeKey)
     return tostring(attributes[attributeKey] or "")
 end
 
-function GlobalLeaderboardController:_getPlayerFrame(boardKey)
+function GlobalLeaderboardController:_shouldWarnBoardIssues()
+    return os.clock() >= (self._startupWarnAt or 0)
+end
+
+function GlobalLeaderboardController:_getPlayerFrame(boardKey, allowWarn)
     local boardModelName = self:_getBoardModelName(boardKey)
     local boardModel = Workspace:FindFirstChild(boardModelName)
     if not boardModel then
-        self:_warnOnce("MissingBoardModel:" .. tostring(boardKey), "[GlobalLeaderboardController] 找不到排行榜模型 " .. boardModelName .. "。")
+        if allowWarn then
+            self:_warnOnce("MissingBoardModel:" .. tostring(boardKey), "[GlobalLeaderboardController] 找不到排行榜模型 " .. boardModelName .. "。")
+        end
         return nil
     end
 
@@ -139,7 +149,9 @@ function GlobalLeaderboardController:_getPlayerFrame(boardKey)
     local frame = surfaceGui and findFirstDescendantByNames(surfaceGui, { "Frame" }) or nil
     local playerFrame = frame and findFirstDescendantByNames(frame, { "Player" }) or nil
     if not playerFrame then
-        self:_warnOnce("MissingPlayerFrame:" .. tostring(boardKey), "[GlobalLeaderboardController] " .. boardModelName .. " 缺少 Frame/Player 结构。")
+        if allowWarn then
+            self:_warnOnce("MissingPlayerFrame:" .. tostring(boardKey), "[GlobalLeaderboardController] " .. boardModelName .. " 缺少 Frame/Player 结构。")
+        end
         return nil
     end
 
@@ -171,8 +183,12 @@ function GlobalLeaderboardController:_formatBoardValue(boardKey, rawValue)
     return FormatUtil.FormatCompactCurrencyPerSecond(rawValue)
 end
 
-function GlobalLeaderboardController:_refreshBoard(boardKey)
-    local playerFrame = self:_getPlayerFrame(boardKey)
+function GlobalLeaderboardController:_refreshBoard(boardKey, allowWarn)
+    if allowWarn == nil then
+        allowWarn = self:_shouldWarnBoardIssues()
+    end
+
+    local playerFrame = self:_getPlayerFrame(boardKey, allowWarn)
     if not playerFrame then
         return
     end
@@ -202,9 +218,19 @@ function GlobalLeaderboardController:_refreshBoard(boardKey)
     end
 end
 
-function GlobalLeaderboardController:_refreshAllBoards()
-    self:_refreshBoard("Production")
-    self:_refreshBoard("Playtime")
+function GlobalLeaderboardController:_refreshAllBoards(allowWarn)
+    self:_refreshBoard("Production", allowWarn)
+    self:_refreshBoard("Playtime", allowWarn)
+end
+
+function GlobalLeaderboardController:_scheduleStartupRefreshes()
+    for _, delaySeconds in ipairs(STARTUP_SILENT_REFRESH_DELAYS) do
+        task.delay(delaySeconds, function()
+            if self._started then
+                self:_refreshAllBoards()
+            end
+        end)
+    end
 end
 
 function GlobalLeaderboardController:Start()
@@ -212,6 +238,7 @@ function GlobalLeaderboardController:Start()
         return
     end
     self._started = true
+    self._startupWarnAt = os.clock() + STARTUP_WARNING_GRACE_SECONDS
 
     for _, attributeKey in ipairs({ "ProductionValue", "ProductionRank", "PlaytimeValue", "PlaytimeRank" }) do
         local attributeName = self:_getAttributeName(attributeKey)
@@ -230,7 +257,7 @@ function GlobalLeaderboardController:Start()
         end
     end))
 
-    self:_refreshAllBoards()
+    self:_scheduleStartupRefreshes()
 end
 
 return GlobalLeaderboardController

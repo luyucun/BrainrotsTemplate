@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 脚本名字: CustomBackpackController
 脚本文件: CustomBackpackController.lua
 脚本类型: ModuleScript
@@ -153,14 +153,16 @@ local function appendUniqueGuiObject(targetList, seen, node)
     table.insert(targetList, node)
 end
 
-function CustomBackpackController.new()
+function CustomBackpackController.new(modalController)
     local self = setmetatable({}, CustomBackpackController)
     self._persistentConnections = {}
     self._toolWatcherConnections = {}
     self._entryConnections = {}
     self._entryClones = {}
+    self._entryToolEntryByClone = {}
     self._renderedToolEntries = {}
     self._didWarnByKey = {}
+    self._modalController = modalController
     self._backpackRoot = nil
     self._itemListRoot = nil
     self._entryTemplate = nil
@@ -169,6 +171,7 @@ function CustomBackpackController.new()
     self._coreBackpackHidden = false
     self._lastGuiActivationClock = 0
     self._lastGuiActivationKey = nil
+    self._refreshBurstToken = 0
     self._started = false
     return self
 end
@@ -235,6 +238,7 @@ function CustomBackpackController:_clearEntryBindings()
     end
 
     table.clear(self._entryClones)
+    table.clear(self._entryToolEntryByClone)
     table.clear(self._renderedToolEntries)
 end
 
@@ -242,15 +246,13 @@ function CustomBackpackController:_getToolSortKey(tool)
     local isBrainrotTool = tool:GetAttribute("BrainrotTool") == true
     local weaponFlagName = tostring((GameConfig.WEAPON or {}).ToolIsWeaponAttributeName or "IsWeaponTool")
     local isWeaponTool = tool:GetAttribute(weaponFlagName) == true
-    local isEquipped = localPlayer.Character and tool.Parent == localPlayer.Character
 
-    local typeOrder = 3
-    if isEquipped then
+    -- Keep slot order stable after equip/unequip instead of moving equipped tools to the front.
+    local typeOrder = 2
+    if isWeaponTool then
         typeOrder = 0
-    elseif isWeaponTool then
-        typeOrder = 1
     elseif isBrainrotTool then
-        typeOrder = 2
+        typeOrder = 1
     end
 
     local explicitOrder = math.max(0, math.floor(tonumber(tool:GetAttribute("BrainrotInstanceId")) or 0))
@@ -381,8 +383,7 @@ function CustomBackpackController:_consumeGuiActivation(toolKey)
     self._lastGuiActivationClock = nowClock
     return true
 end
-
-function CustomBackpackController:_equipOrUnequipTool(tool)
+function CustomBackpackController:_equipOrUnequipTool(tool, shouldUnequip)
     if not (tool and tool.Parent and tool:IsA("Tool")) then
         return
     end
@@ -393,7 +394,7 @@ function CustomBackpackController:_equipOrUnequipTool(tool)
         return
     end
 
-    if tool.Parent == character then
+    if shouldUnequip == true then
         humanoid:UnequipTools()
     else
         humanoid:EquipTool(tool)
@@ -411,7 +412,64 @@ function CustomBackpackController:_activateToolEntry(toolEntry, useGuiDebounce)
         return
     end
 
-    self:_equipOrUnequipTool(toolEntry.tool)
+    self:_equipOrUnequipTool(toolEntry.tool, toolEntry.isEquipped == true)
+end
+
+function CustomBackpackController:_resolveToolEntryFromGuiObject(guiObject)
+    local node = guiObject
+    while node and node ~= self._itemListRoot and node ~= self._backpackRoot do
+        local toolEntry = self._entryToolEntryByClone[node]
+        if type(toolEntry) == "table" then
+            return toolEntry
+        end
+        node = node.Parent
+    end
+
+    return nil
+end
+
+function CustomBackpackController:_findToolEntryAtScreenPosition(screenPosition)
+    if not (screenPosition and self._backpackRoot and self._backpackRoot.Visible) then
+        return nil
+    end
+
+    local playerGui = self:_getPlayerGui()
+    if not playerGui then
+        return nil
+    end
+
+    local success, guiObjects = pcall(function()
+        return playerGui:GetGuiObjectsAtPosition(screenPosition.X, screenPosition.Y)
+    end)
+    if not success or type(guiObjects) ~= "table" then
+        return nil
+    end
+
+    for _, guiObject in ipairs(guiObjects) do
+        local toolEntry = self:_resolveToolEntryFromGuiObject(guiObject)
+        if toolEntry then
+            return toolEntry
+        end
+    end
+
+    return nil
+end
+
+function CustomBackpackController:_handlePointerInputEnded(inputObject)
+    if UserInputService:GetFocusedTextBox() then
+        return
+    end
+
+    if not isActivateInput(inputObject) then
+        return
+    end
+
+    local toolEntry = self:_findToolEntryAtScreenPosition(inputObject.Position)
+    if not toolEntry then
+        return
+    end
+
+    self:_activateToolEntry(toolEntry, true)
 end
 
 function CustomBackpackController:_collectInteractiveNodes(clone)
@@ -428,7 +486,7 @@ function CustomBackpackController:_collectInteractiveNodes(clone)
     appendUniqueGuiObject(nodes, seen, resolvedNode)
 
     for _, descendant in ipairs(clone:GetDescendants()) do
-        if descendant:IsA("GuiButton") then
+        if descendant:IsA("GuiObject") then
             appendUniqueGuiObject(nodes, seen, descendant)
         end
     end
@@ -444,7 +502,11 @@ function CustomBackpackController:_bindEntry(clone, toolEntry)
 
     for _, interactiveNode in ipairs(interactiveNodes) do
         if interactiveNode:IsA("GuiButton") then
+            interactiveNode.Active = true
             table.insert(self._entryConnections, interactiveNode.Activated:Connect(function()
+                self:_activateToolEntry(toolEntry, true)
+            end))
+            table.insert(self._entryConnections, interactiveNode.MouseButton1Click:Connect(function()
                 self:_activateToolEntry(toolEntry, true)
             end))
         elseif interactiveNode:IsA("GuiObject") then
@@ -458,6 +520,12 @@ function CustomBackpackController:_bindEntry(clone, toolEntry)
     end
 end
 
+function CustomBackpackController:_isBackpackHiddenByModal()
+    return self._modalController
+        and self._modalController.IsNodeHiddenByModal
+        and self._modalController:IsNodeHiddenByModal(self._backpackRoot) == true
+end
+
 function CustomBackpackController:_renderEntries()
     if not (isLiveInstance(self._backpackRoot) and isLiveInstance(self._itemListRoot) and isLiveInstance(self._entryTemplate)) then
         return false
@@ -467,7 +535,11 @@ function CustomBackpackController:_renderEntries()
 
     local toolEntries = self:_collectTools()
     self._renderedToolEntries = toolEntries
-    self._backpackRoot.Visible = #toolEntries > 0
+    local shouldShowBackpack = #toolEntries > 0
+    if shouldShowBackpack and self:_isBackpackHiddenByModal() then
+        shouldShowBackpack = false
+    end
+    self._backpackRoot.Visible = shouldShowBackpack
 
     for index, toolEntry in ipairs(toolEntries) do
         local clone = self._entryTemplate:Clone()
@@ -480,6 +552,7 @@ function CustomBackpackController:_renderEntries()
         self:_applyEntryVisual(clone, toolEntry)
         clone.Parent = self._entryTemplate.Parent or self._itemListRoot
         table.insert(self._entryClones, clone)
+        self._entryToolEntryByClone[clone] = toolEntry
         self:_bindEntry(clone, toolEntry)
     end
 
@@ -572,6 +645,30 @@ function CustomBackpackController:_queueRefresh()
     end)
 end
 
+function CustomBackpackController:_scheduleRefreshBurst(durationSeconds, intervalSeconds)
+    local duration = math.max(0, tonumber(durationSeconds) or 0)
+    local interval = math.max(0.1, tonumber(intervalSeconds) or 0.5)
+    if duration <= 0 then
+        self:_queueRefresh()
+        return
+    end
+
+    self._refreshBurstToken += 1
+    local burstToken = self._refreshBurstToken
+
+    task.spawn(function()
+        local deadline = os.clock() + duration
+        repeat
+            if burstToken ~= self._refreshBurstToken then
+                return
+            end
+
+            self:_queueRefresh()
+            task.wait(interval)
+        until os.clock() >= deadline
+    end)
+end
+
 function CustomBackpackController:_queueRebind()
     if self._rebindQueued then
         return
@@ -583,6 +680,7 @@ function CustomBackpackController:_queueRebind()
         self:_bindToolWatchers()
         self:_queueRefresh()
         self:_scheduleRetryBind()
+        self:_scheduleRefreshBurst(6, 0.5)
     end)
 end
 
@@ -609,9 +707,23 @@ function CustomBackpackController:Start()
         self:_handleInputBegan(inputObject, gameProcessedEvent)
     end))
 
+    table.insert(self._persistentConnections, UserInputService.InputEnded:Connect(function(inputObject)
+        self:_handlePointerInputEnded(inputObject)
+    end))
+
+    if self._modalController and self._modalController.GetVisibilityChangedEvent then
+        local visibilityChangedEvent = self._modalController:GetVisibilityChangedEvent()
+        if visibilityChangedEvent then
+            table.insert(self._persistentConnections, visibilityChangedEvent:Connect(function()
+                self:_queueRefresh()
+            end))
+        end
+    end
+
     table.insert(self._persistentConnections, localPlayer.CharacterAdded:Connect(function()
         self:_bindToolWatchers()
         self:_queueRefresh()
+        self:_scheduleRefreshBurst(6, 0.5)
     end))
 
     table.insert(self._persistentConnections, localPlayer.ChildAdded:Connect(function(child)
@@ -639,7 +751,7 @@ function CustomBackpackController:Start()
     end
 
     self:_scheduleRetryBind()
+    self:_scheduleRefreshBurst(6, 0.5)
 end
 
 return CustomBackpackController
-

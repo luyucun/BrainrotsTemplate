@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: RemoteEventService
 脚本文件: RemoteEventService.lua
 脚本类型: ModuleScript
@@ -87,6 +87,9 @@ function RemoteEventService:Init()
     self._events.BrainrotUpgradeFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotUpgradeFeedback)
     self._events.RequestBrainrotSell = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotSell) -- V2.6
     self._events.BrainrotSellFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotSellFeedback) -- V2.6
+    self._events.BrainrotGiftOffer = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotGiftOffer) -- V2.9
+    self._events.RequestBrainrotGiftDecision = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestBrainrotGiftDecision) -- V2.9
+    self._events.BrainrotGiftFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.BrainrotGiftFeedback) -- V2.9
     self._events.RequestStudioBrainrotGrant = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.RequestStudioBrainrotGrant) -- Studio Only
     self._events.StudioBrainrotGrantFeedback = findOrCreateRemoteEvent(brainrotEvents, RemoteNames.Brainrot.StudioBrainrotGrantFeedback) -- Studio Only
 end
@@ -96,4 +99,5 @@ function RemoteEventService:GetEvent(eventKey)
 end
 
 return RemoteEventService
+
 

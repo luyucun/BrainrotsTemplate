@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: MainServer
 脚本文件: MainServer.server.lua
 脚本类型: Script
@@ -65,6 +65,7 @@ local SocialService = requireServerModule("SocialService")
 local QuickTeleportService = requireServerModule("QuickTeleportService")
 local GlobalLeaderboardService = requireServerModule("GlobalLeaderboardService")
 local SpecialEventService = requireServerModule("SpecialEventService")
+local GiftService = requireServerModule("GiftService")
 
 RemoteEventService:Init()
 PlayerDataService:Init()
@@ -127,6 +128,10 @@ GlobalLeaderboardService:Init({
 SpecialEventService:Init({
 	RemoteEventService = RemoteEventService,
 })
+GiftService:Init({
+	RemoteEventService = RemoteEventService,
+	BrainrotService = BrainrotService,
+})
 
 local function onPlayerAdded(player)
 	local assignedHome = HomeService:AssignHome(player)
@@ -145,6 +150,7 @@ local function onPlayerAdded(player)
 	RebirthService:OnPlayerReady(player)
 	HomeExpansionService:OnPlayerReady(player, assignedHome)
 	BrainrotService:OnPlayerReady(player, assignedHome)
+	GiftService:OnPlayerReady(player)
 	SocialService:OnPlayerReady(player, assignedHome)
 	SpecialEventService:OnPlayerReady(player)
 
@@ -175,6 +181,7 @@ local function onPlayerRemoving(player)
 	GlobalLeaderboardService:OnPlayerRemoving(player)
 	FriendBonusService:OnPlayerRemoving(player)
 	BrainrotService:OnPlayerRemoving(player)
+	GiftService:OnPlayerRemoving(player)
 	HomeExpansionService:OnPlayerRemoving(player, assignedHome)
 	RebirthService:OnPlayerRemoving(player)
 	CurrencyService:OnPlayerRemoving(player)
@@ -195,3 +202,4 @@ game:BindToClose(function()
 	GlobalLeaderboardService:FlushAllPlayers()
 	PlayerDataService:SaveAllPlayers()
 end)
+

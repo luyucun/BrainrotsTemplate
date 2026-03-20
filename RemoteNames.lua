@@ -1,4 +1,4 @@
---[[
+﻿--[[
 脚本名字: RemoteNames
 脚本文件: RemoteNames.lua
 脚本类型: ModuleScript
@@ -40,10 +40,14 @@ local RemoteNames = {
         BrainrotUpgradeFeedback = "BrainrotUpgradeFeedback",
         RequestBrainrotSell = "RequestBrainrotSell", -- V2.6: C -> S，请求出售单个/全部背包脑红
         BrainrotSellFeedback = "BrainrotSellFeedback", -- V2.6: S -> C，返回出售结果与剩余背包数量
+        BrainrotGiftOffer = "BrainrotGiftOffer", -- V2.9: S -> C，向接收方弹出脑红赠送确认框
+        RequestBrainrotGiftDecision = "RequestBrainrotGiftDecision", -- V2.9: C -> S，接收方提交接受/拒绝结果
+        BrainrotGiftFeedback = "BrainrotGiftFeedback", -- V2.9: S -> C，给发起方/接收方同步赠送状态与拒绝冷却
         RequestStudioBrainrotGrant = "RequestStudioBrainrotGrant", -- Studio Only: C -> S，请求测试发放 1 个指定脑红
         StudioBrainrotGrantFeedback = "StudioBrainrotGrantFeedback", -- Studio Only: S -> C，返回测试发放结果
     },
 }
 
 return RemoteNames
+
 
